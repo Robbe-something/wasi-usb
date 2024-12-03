@@ -44,7 +44,6 @@ Please limit to one champion per company or organization
 
 The WASI USB proposal adds an API for controlling USB devices. The API is meant to be used to with any kind of USB device, and is more low-level than, for example, accessing USb devices through the filesystem. The API design is based on the [libusb](https://libusb.info/) library, which is an often-used library for accessing USB devices in native programs. Just like libusb, this API aims to be a thin wrapper around the USB standard and Operating System APIs, with improved ergonomics where necessary. Access control can be applied to limit the devices a component can access.
 
-A reference implementation can be found [here](https://github.com/Wouter01/USB_WASI).
 
 ### Goals [or Motivating Use Cases, or Scenarios]
 
