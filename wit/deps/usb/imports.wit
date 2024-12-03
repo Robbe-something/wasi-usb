@@ -1,0 +1,6 @@
+package component:usb@0.2.0;
+
+world imports {
+    import device;
+    import events;
+}

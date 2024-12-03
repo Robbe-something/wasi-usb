@@ -14,10 +14,15 @@ Please limit to one champion per company or organization
 - Merlijn Sebrechts
 - (Wouter Hennen)
 - (Warre Dujardin)
+- (Robbe Leroy)
 
 ### Portability Criteria
 
-TODO before entering Phase 2.
+| Platform | Architecture | Reference Hardware |
+|----------|--------------|--------------------|
+| Linux    | amd64        |                    |
+| Linux    | aarch64      | Rasperry Pi 4      |
+| Macos    | aarch64      | Macbook Pro M2 MAX |
 
 ## Table of Contents [if the explainer is longer than one printed page]
 
