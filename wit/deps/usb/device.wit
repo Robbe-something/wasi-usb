@@ -1,18 +1,12 @@
 package component:usb@0.2.0;
 
-// Open questions/TODOs:
-// TODO: Hotplug support? How to write a decent interface for that? Maybe wait for async primitives in preview 3?
-// TODO: how to handle timeouts? WebUSB doesn't have them either. see https://stackoverflow.com/questions/65424624/does-webusb-support-timeouts and https://github.com/WICG/webusb/issues/25
-// TODO: async support? (probably wait for preview 3)
-// TODO: should transfer functions, ... take a resource to the endpoint/interface/configuration, or a raw u8? See README for more info
-
+// async support, wait for preview 3
 interface device {
     use descriptors.{device-descriptor, configuration-descriptor, interface-descriptor, endpoint-descriptor};
     use types.{speed, filter, control-setup-type, control-setup-recipient, control-setup};
     
     // Main resource representing a USB device. Any communication with the device happens through this resource.
     resource usb-device {
-        constructor(device: f32);
         // Main entry point for the API.
         // Returns all the USB devices currently connected to the system (or if access control is implemented by the runtime, only the ones the component has access to)
         enumerate: static func() -> list<usb-device>;
