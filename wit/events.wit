@@ -1,7 +1,7 @@
-package component:usb@0.2.0;
+package component:usb@0.2.1;
 
 interface events {
-    use device.{usb-device};
+    use usb.{usb-device};
 
     variant device-connection-event {
         pending,
@@ -9,5 +9,6 @@ interface events {
         disconnected(usb-device)
     }
 
+    // TODO: wasip3 will support async functions and streams
     update: func() -> device-connection-event;
 }

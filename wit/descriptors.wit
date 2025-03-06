@@ -1,0 +1,58 @@
+package component:usb@0.2.1;
+
+interface descriptors {
+    use types.{endpoint-direction, endpoint-transfer-type, endpoint-sync-type, endpoint-usage-type, version};
+    record device-interface {
+        number: u8,
+        interface-descriptors: list<interface-descriptor>,
+    }
+
+    record config-descriptor {
+        number: u8,
+        max-power: u16,
+        self-powered: bool,
+        remote-wakeup: bool,
+        description: option<u8>,
+        num-interfaces: u8,
+        interfaces: list<device-interface>,
+    }
+
+    record interface-descriptor {
+        interface-number: u8,
+        setting-number: u8,
+        class-code: u8,
+        subclass-code: u8,
+        protocol-code: u8,
+        description: option<u8>,
+        num-endpoints: u8,
+        endpoints: list<endpoint-descriptor>,
+    }
+
+    record endpoint-descriptor {
+        address: u8,
+        number: u8,
+        direction: endpoint-direction,
+        transfer-type: endpoint-transfer-type,
+        max-packet-size: u16,
+        sync-type: endpoint-sync-type,
+        usage-type: endpoint-usage-type,
+        polling-interval: u8,
+        refresh-rate: u8, //audio
+        synch-address: u8, //audio
+    }
+
+    record device-descriptor {
+        usb-version: version,
+        device-version: version,
+        manufacturer-string: option<u8>,
+        product-string: option<u8>,
+        serial-number-string: option<u8>,
+        class-code: u8,
+        subclass-code: u8,
+        protocol-code: u8,
+        vendor-id: u16,
+        product-id: u16,
+        max-packet-size: u8,
+        num-configurations: u8,
+    }
+}
