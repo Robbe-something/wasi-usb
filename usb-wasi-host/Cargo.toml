@@ -1,0 +1,8 @@
+[package]
+name = "usb-wasi-host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasmtime = { version = "30.0.2", features = ["component-model"]}
+wasmtime-wasi = "30.0.2"
