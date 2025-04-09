@@ -15,7 +15,7 @@ interface types {
 
     enum endpoint-sync-type {
         no-sync,
-        async,
+        %async,
         adaptive,
         synchronous,
     }

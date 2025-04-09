@@ -11,3 +11,10 @@ world imports {
     export events;
     export usb;
 }
+
+world guest {
+    import types;
+    import descriptors;
+    import events;
+    import usb;
+}

@@ -1,8 +1,0 @@
-package component:usb-test;
-
-world root {
-    import component:usb/types;
-    import component:usb/descriptors;
-    import component:usb/events;
-    import component:usb/usb;
-}

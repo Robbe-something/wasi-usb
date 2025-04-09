@@ -10,5 +10,5 @@ interface events {
     }
 
     // TODO: wasip3 will support async functions and streams
-    update: func() -> device-connection-event;
+    update: func() -> future<u8>;
 }
