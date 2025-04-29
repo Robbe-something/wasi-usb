@@ -1,9 +1,11 @@
 use crate::component::usb::configuration::ConfigValue;
 use crate::component::usb::descriptors::ConfigurationDescriptor;
-use crate::component::usb::device::{HostDeviceHandle, HostUsbDevice, TransferOptions, TransferSetup};
+use crate::component::usb::device::{
+    HostDeviceHandle, HostUsbDevice, TransferOptions, TransferSetup,
+};
 use crate::component::usb::errors::LibusbError;
 use crate::component::usb::transfers::{HostTransfer, Transfer};
-use libusb_sys::{libusb_attach_kernel_driver, libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close, libusb_detach_kernel_driver, libusb_device, libusb_device_handle, libusb_get_configuration, libusb_kernel_driver_active, libusb_release_interface, libusb_reset_device, libusb_set_configuration, libusb_set_interface_alt_setting, libusb_transfer, libusb_unref_device};
+use libusb_sys::{libusb_alloc_streams, libusb_attach_kernel_driver, libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close, libusb_context, libusb_detach_kernel_driver, libusb_device, libusb_device_handle, libusb_free_streams, libusb_get_configuration, libusb_kernel_driver_active, libusb_release_interface, libusb_reset_device, libusb_set_configuration, libusb_set_interface_alt_setting, libusb_transfer, libusb_unref_device};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use wasmtime::component::*;
@@ -15,7 +17,6 @@ use wasmtime_wasi::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
 pub struct UsbTransfer {
     transfer: *mut libusb_transfer,
     completed: Arc<AtomicBool>,
-
 }
 pub struct UsbDevice {
     pub device: *mut libusb_device,
@@ -34,12 +35,13 @@ bindgen!({
     },
     trappable_imports: true,
     async: true
-    
+
 });
 
 struct MyState {
     table: ResourceTable,
     ctx: WasiCtx,
+    context: Option<*mut libusb_context>,
 }
 
 impl MyState {
@@ -90,15 +92,25 @@ impl component::usb::descriptors::Host for MyState {}
 impl component::usb::errors::Host for MyState {}
 
 impl HostTransfer for MyState {
-    async fn submit_transfer(&mut self, self_: Resource<Transfer>, data: Vec<u8>) -> Result<std::result::Result<(), component::usb::transfers::LibusbError>> {
+    async fn submit_transfer(
+        &mut self,
+        self_: Resource<Transfer>,
+        data: Vec<u8>,
+    ) -> Result<std::result::Result<(), component::usb::transfers::LibusbError>> {
         todo!()
     }
 
-    async fn cancel_transfer(&mut self, self_: Resource<UsbTransfer>) -> Result<std::result::Result<(), LibusbError>> {
+    async fn cancel_transfer(
+        &mut self,
+        self_: Resource<UsbTransfer>,
+    ) -> Result<std::result::Result<(), LibusbError>> {
         todo!()
     }
 
-    async fn await_transfer(&mut self, self_: Resource<Transfer>) -> Result<std::result::Result<Vec<u8>, component::usb::transfers::LibusbError>> {
+    async fn await_transfer(
+        &mut self,
+        self_: Resource<Transfer>,
+    ) -> Result<std::result::Result<Vec<u8>, component::usb::transfers::LibusbError>> {
         todo!()
     }
 
@@ -119,17 +131,32 @@ impl HostTransfer for MyState {
 
 impl component::usb::transfers::Host for MyState {}
 
-
 impl HostUsbDevice for MyState {
-    async fn open(&mut self, self_: Resource<UsbDevice>) -> Result<std::result::Result<Resource<UsbDeviceHandle>, LibusbError>> {
+    async fn open(
+        &mut self,
+        self_: Resource<UsbDevice>,
+    ) -> Result<std::result::Result<Resource<UsbDeviceHandle>, LibusbError>> {
         todo!()
     }
 
-    async fn get_configuration_descriptor(&mut self, self_: Resource<UsbDevice>, config_index: u8) -> Result<std::result::Result<ConfigurationDescriptor, LibusbError>> {
+    async fn get_configuration_descriptor(
+        &mut self,
+        self_: Resource<UsbDevice>,
+        config_index: u8,
+    ) -> Result<std::result::Result<ConfigurationDescriptor, LibusbError>> {
         todo!()
     }
 
-    async fn get_configuration_descriptor_by_value(&mut self, self_: Resource<UsbDevice>, config_value: u8) -> Result<std::result::Result<component::usb::device::ConfigurationDescriptor, component::usb::device::LibusbError>> {
+    async fn get_configuration_descriptor_by_value(
+        &mut self,
+        self_: Resource<UsbDevice>,
+        config_value: u8,
+    ) -> Result<
+        std::result::Result<
+            component::usb::device::ConfigurationDescriptor,
+            component::usb::device::LibusbError,
+        >,
+    > {
         todo!()
     }
 
@@ -144,21 +171,26 @@ impl HostUsbDevice for MyState {
 }
 
 impl HostDeviceHandle for MyState {
-    async fn get_configuration(&mut self, self_: Resource<UsbDeviceHandle>) -> Result<std::result::Result<u8, LibusbError>> {
+    async fn get_configuration(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+    ) -> Result<std::result::Result<u8, LibusbError>> {
         let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
         unsafe {
             let mut config: i32 = 0;
             let res = libusb_get_configuration(usb_device_handle.handle, &mut config);
-            Ok(
-                match res {
-                    0.. => Ok(config as u8),
-                    _ => Err(LibusbError::from_raw(res))
-                }
-            )
+            Ok(match res {
+                0.. => Ok(config as u8),
+                _ => Err(LibusbError::from_raw(res)),
+            })
         }
     }
 
-    async fn set_configuration(&mut self, self_: Resource<UsbDeviceHandle>, config: ConfigValue) -> Result<std::result::Result<(), LibusbError>> {
+    async fn set_configuration(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        config: ConfigValue,
+    ) -> Result<std::result::Result<(), LibusbError>> {
         let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
         unsafe {
             let config_value = match config {
@@ -166,154 +198,221 @@ impl HostDeviceHandle for MyState {
                 ConfigValue::Unconfigured => 0,
             };
             let res = libusb_set_configuration(usb_device_handle.handle, config_value);
-            Ok(
-                match res {
-                    0.. => Ok(()),
-                    _ => Err(LibusbError::from_raw(res))
-                }
-            )
-        }
-    }
-
-    async fn claim_interface(&mut self, self_: Resource<UsbDeviceHandle>, ifac: u8) -> Result<std::result::Result<(), LibusbError>> {
-        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
-        unsafe {
-            let res = libusb_claim_interface(usb_device_handle.handle, ifac as i32);
-            Ok(
-                match res {
-                    0.. => Ok(()),
-                    _ => Err(LibusbError::from_raw(res))
-                }
-            )
-        }
-    }
-
-    async fn release_interface(&mut self, self_: Resource<UsbDeviceHandle>, ifac: u8) -> Result<std::result::Result<(), LibusbError>> {
-        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
-        unsafe {
-            let res = libusb_release_interface(usb_device_handle.handle, ifac as i32);
-            Ok(
-                match res {
-                    0.. => Ok(()),
-                    _ => Err(LibusbError::from_raw(res))
-                }
-            )
-        }
-    }
-
-    async fn set_interface_altsetting(&mut self, self_: Resource<UsbDeviceHandle>, ifac: u8, alt_setting: u8) -> Result<std::result::Result<(), LibusbError>> {
-        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
-        unsafe {
-            let res = libusb_set_interface_alt_setting(usb_device_handle.handle, ifac as i32, alt_setting as i32);
             Ok(match res {
                 0.. => Ok(()),
-                _ => Err(LibusbError::from_raw(res))
+                _ => Err(LibusbError::from_raw(res)),
             })
         }
     }
 
-
-async fn clear_halt(&mut self, self_: Resource<UsbDeviceHandle>, endpoint: u8) -> Result<std::result::Result<(), LibusbError>> {
-    let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
-    unsafe {
-        let res = libusb_clear_halt(usb_device_handle.handle, endpoint);
-        Ok(
-            match res {
-                0.. => Ok(()),
-                _ => Err(LibusbError::from_raw(res))
-            }
-        )
-    }
-}
-
-async fn reset_device(&mut self, self_: Resource<UsbDeviceHandle>) -> Result<std::result::Result<(), LibusbError>> {
-    let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
-    unsafe {
-        let res = libusb_reset_device(usb_device_handle.handle);
-        Ok(
-            match res {
-                0.. => Ok(()),
-                _ => Err(LibusbError::from_raw(res))
-            }
-        )
-    }
-}
-
-async fn kernel_driver_active(&mut self, self_: Resource<UsbDeviceHandle>, ifac: u8) -> Result<std::result::Result<bool, LibusbError>> {
-    let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
-    unsafe {
-        let res = libusb_kernel_driver_active(usb_device_handle.handle, ifac as i32);
-        Ok(match res {
-            0 => Ok(false),
-            1.. => Ok(true),
-            _ => Err(LibusbError::from_raw(res))
-        })
-    }
-}
-
-async fn detach_kernel_driver(&mut self, self_: Resource<UsbDeviceHandle>, ifac: u8) -> Result<std::result::Result<(), LibusbError>> {
-    let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
-    unsafe {
-        let res = libusb_detach_kernel_driver(usb_device_handle.handle, ifac as i32);
-        Ok(
-            match res {
-                0.. => Ok(()),
-                _ => Err(LibusbError::from_raw(res))
-            }
-        )
-    }
-}
-
-async fn attach_kernel_driver(&mut self, self_: Resource<UsbDeviceHandle>, ifac: u8) -> Result<std::result::Result<(), LibusbError>> {
-    let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
-    unsafe {
-        let res = libusb_attach_kernel_driver(usb_device_handle.handle, ifac as i32);
-        Ok(
-            match res {
-                0.. => Ok(()),
-                _ => Err(LibusbError::from_raw(res))
-            }
-        )
-    }
-}
-
-async fn close(&mut self, self_: Resource<UsbDeviceHandle>) -> Result<()> {
-    if let Ok(handle) = self.table.get(&self_) {
+    async fn claim_interface(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        ifac: u8,
+    ) -> Result<std::result::Result<(), LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
         unsafe {
-            libusb_close(handle.handle);
+            let res = libusb_claim_interface(usb_device_handle.handle, ifac as i32);
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
         }
     }
-    Ok(())
-}
 
-async fn drop(&mut self, rep: Resource<UsbDeviceHandle>) -> Result<()> {
-    if let Ok(handle) = self.table.get(&rep) {
+    async fn release_interface(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        ifac: u8,
+    ) -> Result<std::result::Result<(), LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
         unsafe {
-            libusb_close(handle.handle);
+            let res = libusb_release_interface(usb_device_handle.handle, ifac as i32);
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
         }
     }
-    Ok(())
-}
 
-async fn alloc_streams(&mut self, self_: Resource<UsbDeviceHandle>, num_streams: u32, endpoints: Vec<u8>) -> Result<std::result::Result<u32, component::usb::device::LibusbError>> {
-    todo!()
-}
+    async fn set_interface_altsetting(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        ifac: u8,
+        alt_setting: u8,
+    ) -> Result<std::result::Result<(), LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
+        unsafe {
+            let res = libusb_set_interface_alt_setting(
+                usb_device_handle.handle,
+                ifac as i32,
+                alt_setting as i32,
+            );
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
+        }
+    }
 
-async fn free_streams(&mut self, self_: Resource<UsbDeviceHandle>, endpoints: Vec<u8>) -> Result<std::result::Result<(), component::usb::device::LibusbError>> {
-    todo!()
-}
+    async fn clear_halt(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        endpoint: u8,
+    ) -> Result<std::result::Result<(), LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
+        unsafe {
+            let res = libusb_clear_halt(usb_device_handle.handle, endpoint);
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
+        }
+    }
 
-async fn new_transfer(&mut self, self_: Resource<UsbDeviceHandle>, xfer_type: component::usb::device::TransferType, setup: TransferSetup, buf_size: u32, opts: TransferOptions) -> Result<std::result::Result<Resource<component::usb::device::Transfer>, component::usb::device::LibusbError>> {
-    todo!()
-}
+    async fn reset_device(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+    ) -> Result<std::result::Result<(), LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
+        unsafe {
+            let res = libusb_reset_device(usb_device_handle.handle);
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
+        }
+    }
+
+    async fn kernel_driver_active(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        ifac: u8,
+    ) -> Result<std::result::Result<bool, LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
+        unsafe {
+            let res = libusb_kernel_driver_active(usb_device_handle.handle, ifac as i32);
+            Ok(match res {
+                0 => Ok(false),
+                1.. => Ok(true),
+                _ => Err(LibusbError::from_raw(res)),
+            })
+        }
+    }
+
+    async fn detach_kernel_driver(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        ifac: u8,
+    ) -> Result<std::result::Result<(), LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
+        unsafe {
+            let res = libusb_detach_kernel_driver(usb_device_handle.handle, ifac as i32);
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
+        }
+    }
+
+    async fn attach_kernel_driver(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        ifac: u8,
+    ) -> Result<std::result::Result<(), LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
+        unsafe {
+            let res = libusb_attach_kernel_driver(usb_device_handle.handle, ifac as i32);
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
+        }
+    }
+
+    async fn close(&mut self, self_: Resource<UsbDeviceHandle>) -> Result<()> {
+        if let Ok(handle) = self.table.get(&self_) {
+            unsafe {
+                libusb_close(handle.handle);
+            }
+        }
+        Ok(())
+    }
+
+    async fn drop(&mut self, rep: Resource<UsbDeviceHandle>) -> Result<()> {
+        if let Ok(handle) = self.table.get(&rep) {
+            unsafe {
+                libusb_close(handle.handle);
+            }
+        }
+        Ok(())
+    }
+
+    async fn alloc_streams(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        num_streams: u32,
+        endpoints: Vec<u8>,
+    ) -> Result<std::result::Result<(), component::usb::device::LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
+        let num_endpoints = endpoints.len() as i32;
+        let endpoints_ptr = endpoints.as_ptr() as *mut u8;
+        unsafe {
+            let res = libusb_alloc_streams(usb_device_handle.handle, num_streams, endpoints_ptr, num_endpoints);
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
+        }
+    }
+
+    async fn free_streams(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        endpoints: Vec<u8>,
+    ) -> Result<std::result::Result<(), component::usb::device::LibusbError>> {
+        let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
+        let num_endpoints = endpoints.len() as i32;
+        let endpoints_ptr = endpoints.as_ptr() as *mut u8;
+        unsafe {
+            let res = libusb_free_streams(usb_device_handle.handle, endpoints_ptr, num_endpoints);
+            Ok(match res {
+                0.. => Ok(()),
+                _ => Err(LibusbError::from_raw(res)),
+            })
+        }
+
+
+    }
+
+    async fn new_transfer(
+        &mut self,
+        self_: Resource<UsbDeviceHandle>,
+        xfer_type: component::usb::device::TransferType,
+        setup: TransferSetup,
+        buf_size: u32,
+        opts: TransferOptions,
+    ) -> Result<
+        std::result::Result<
+            Resource<component::usb::device::Transfer>,
+            component::usb::device::LibusbError,
+        >,
+    > {
+        todo!()
+    }
 }
 
 impl component::usb::device::Host for MyState {
-    async fn init(&mut self) -> Result<std::result::Result<(), component::usb::device::LibusbError>> {
+    async fn init(
+        &mut self,
+    ) -> Result<std::result::Result<(), component::usb::device::LibusbError>> {
         todo!()
     }
 
-    async fn list_devices(&mut self) -> Result<std::result::Result<Vec<Resource<UsbDevice>>, component::usb::device::LibusbError>> {
+    async fn list_devices(
+        &mut self,
+    ) -> Result<std::result::Result<Vec<Resource<UsbDevice>>, component::usb::device::LibusbError>>
+    {
         todo!()
     }
 }
@@ -327,7 +426,11 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
     let component_path = &args[1];
-    let engine = Engine::new(Config::new().async_support(true).wasm_component_model_async(true))?;
+    let engine = Engine::new(
+        Config::new()
+            .async_support(true)
+            .wasm_component_model_async(true),
+    )?;
     let component = Component::from_file(&engine, component_path)?;
     let mut linker = Linker::new(&engine);
     Host_::add_to_linker(&mut linker, |state: &mut MyState| state)?;
@@ -339,7 +442,7 @@ async fn main() -> Result<()> {
 }
 
 /*
-    libusb bekijken webusb, taal die programma zelf gebruken zie compileren naar webusb
-    gelijkaardige backend voor libusb voor wasi en wasm
-    applicatie compileren met libusb compilenren naar wasi en wasm
- */
+   libusb bekijken webusb, taal die programma zelf gebruken zie compileren naar webusb
+   gelijkaardige backend voor libusb voor wasi en wasm
+   applicatie compileren met libusb compilenren naar wasi en wasm
+*/
