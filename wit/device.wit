@@ -1,46 +1,103 @@
 package component:usb@0.2.1;
 
-interface usb {
-    use descriptors.{device-descriptor, config-descriptor};
-    use types.{speed, duration, device-handle-error, language};
+interface device {
+    // Import the error codes enum from errors.wit
+    use errors.{libusb-error};
+    use configuration.{config-value};
+    use descriptors.{device-descriptor, configuration-descriptor, interface-descriptor, endpoint-descriptor};
+    use transfers.{transfer, transfer-type, transfer-setup, transfer-options};
+
+    /// Opaque USB device object (represents a detected USB device).
     resource usb-device {
-        device-descriptor: func() -> result<device-descriptor>;
-        config-descriptor: func() -> result<config-descriptor>;
-        bus-number: func() -> u8;
-        address: func() -> u8;
-        speed: func() -> speed;
-        open: func() -> result<device-handle>;
-        port-number: func() -> u8;
+        /// Open a device and return a handle for I/O operations.
+        /// The `device` must be one from the list_devices result.
+        /// On success, returns a device-handle for the open device.
+        /// Errors: access (permission denied), no_device (device disconnected), etc.
+        open: func() -> result<device-handle, libusb-error>;
+
+        // Functions to retrieve descriptors
+        // get-device-descriptor: func() -> result<device-descriptor, libusb-error>;
+        get-configuration-descriptor: func(config-index: u8) -> result<configuration-descriptor, libusb-error>;
+        get-configuration-descriptor-by-value: func(config-value: u8) -> result<configuration-descriptor, libusb-error>;
+        // get-interface-descriptor: func(interface-number: u8, alternate-setting: u8) -> result<interface-descriptor, libusb-error>;
+        // get-endpoint-descriptor: func(interface-number: u8, endpoint-index: u8) -> result<endpoint-descriptor, libusb-error>;
+
     }
 
-    resource context {
-        devices: func() -> result<list<usb-device>>;
-        open-device-with-vid-pid: func(vendor-id: u16, product-id: u16) -> option<device-handle>;
-    }
-
+    /// Opaque handle for an open USB device (for performing I/O).
     resource device-handle {
-        device: func() -> usb-device;
-        active-configuration: func() -> result<u8>;
-        set-active-configuration: func(config: u8) -> result;
-        unconfigure: func() -> result;
-        reset: func() -> result;
-        clear-halt: func(endpoint: u8) -> result;
-        kernel-driver-active: func() -> result<bool>;
-        detach-kernel-driver: func() -> result;
-        attach-kernel-driver: func() -> result;
-        set-auto-attach-detach-kernel-driver: func(auto: bool) -> result;
-        claim-interface: func(iface: u8) -> result;
-        release-interface: func(iface: u8) -> result;
-        set-interface-alt-setting: func(iface: u8, alt-setting: u8) -> result;
-        read-interrupt: func(endpoint: u8, timeout: duration) -> result<tuple<u64, list<u8>>, device-handle-error>;
-        write-interrupt: func(endpoint: u8, data: list<u8>, timeout: duration) -> result<u64, device-handle-error>;
-        read-bulk: func(endpoint: u8, max-size: u64, timeout: duration) -> result<tuple<u64, list<u8>>, device-handle-error>;
-        write-bulk: func(endpoint: u8, data: list<u8>, timeout: duration) -> result<u64, device-handle-error>;
-        read-control: func(request-type: u8, request: u8, value: u16, index: u16, max-size: u16, timeout: duration) -> result<tuple<u64, list<u8>>, device-handle-error>;  
-        write-control: func(request-type: u8, request: u8, value: u16, index: u16, data: list<u8>, timeout: duration) -> result<u64, device-handle-error>;
-        read-languages: func(timeout: duration) -> result<list<language>>;
-        read-string-descriptor-ascii: func(index: u8) -> result<string>;
-        read-string-descriptor: func(language: language, index: u8, timeout: duration) -> result<string>;
-        read-manufacturer-string-ascii: func(device: device-descriptor);
+        /// Get the currently active configuration value of an open device.
+        /// On success, returns the bConfigurationValue (0 if unconfigured).
+        get-configuration: func() -> result<u8, libusb-error>;
+
+        /// Set the active configuration for a device.
+        /// Use ConfigValue.unconfigured to unconfigure (set config 0), or ConfigValue.value(n) to set configuration 'n'.
+        /// Returns an error if the device is busy or the configuration is invalid.
+        set-configuration: func(config: config-value) -> result<_, libusb-error>;
+
+        /// Claim an iface on a device so it can be used by libusb.
+        /// This should prepare the interface for I/O (detach kernel driver if needed, etc.).
+        claim-interface: func(ifac: u8) -> result<_, libusb-error>;
+
+        /// Release a previously claimed interface.
+        /// This may perform a SET_INTERFACE to reset alt setting to 0.
+        release-interface: func(ifac: u8) -> result<_, libusb-error>;
+
+        /// Set the alternate setting for the specified interface (must be claimed first).
+        set-interface-altsetting: func(ifac: u8, alt-setting: u8) -> result<_, libusb-error>;
+
+        /// Clear the halt/stall condition on the given endpoint (endpoint number with direction bit).
+        /// After this, the endpoint can be used again for transfers.
+        clear-halt: func(endpoint: u8) -> result<_, libusb-error>;
+
+        /// Perform a USB port reset on the device.
+        /// If successful, the device will re-enumerate. The handle remains valid if the device can be re-opened.
+        reset-device: func() -> result<_, libusb-error>;
+
+        /// Allocate a USB 3 bulk stream
+        /// This is used for bulk transfers with USB 3.0 devices.
+        alloc-streams: func(num-streams: u32, endpoints: list<u8>) -> result<u32, libusb-error>;
+
+        /// Free a previously allocated USB 3 bulk stream
+        /// This is used for bulk transfers with USB 3.0 devices.
+        free-streams: func(endpoints: list<u8>) -> result<_, libusb-error>;
+
+        /// Check if a kernel driver is active on the given interface.
+        /// Returns: Ok(true) if a kernel driver is active, Ok(false) if not;
+        /// LIBUSB_ERROR_NO_DEVICE if device is gone. This is optional.
+        kernel-driver-active: func(ifac: u8) -> result<bool, libusb-error>;
+
+        /// Detach the kernel driver from an interface, if one is active.
+        /// After this, libusb can claim the interface. Optional; not all platforms support it.
+        detach-kernel-driver: func(ifac: u8) -> result<_, libusb-error>;
+
+        /// Re-attach the kernel driver to an interface. Optional.
+        /// Should only be called if a driver was previously detached.
+        attach-kernel-driver: func(ifac: u8) -> result<_, libusb-error>;
+
+        /// Submit an asynchronous USB transfer on an open device handle.
+        /// - `endpoint`: Endpoint address (with direction bit; e.g., 0x81 for IN endpoint 1).
+        /// - `type`: Type of transfer (control, bulk, etc.). If `control`, the data should begin with the 8-byte setup packet.
+        /// - `data`: The payload buffer for the transfer. For control OUT, this includes the setup packet and outgoing data; for control IN, include the setup packet and allocate space for response.
+        /// - `timeout_ms`: Timeout for the transfer in milliseconds (0 for no timeout).
+        /// On success, returns a Transfer handle representing the in-flight transfer. The actual completion (success or error) will be delivered via the event handling mechanism.
+        new-transfer: func(xfer-type: transfer-type, setup: transfer-setup, buf-size: u32, opts: transfer-options) -> result<transfer, libusb-error>;
+
+        /// Close an open device handle. After this, the handle is invalid.
+        /// This will release any resources allocated for the handle.
+        /// (No error is returned; if the device was already disconnected,
+        /// the handle is simply closed.)
+        close: func();
     }
+
+    /// Initialize the libusb backend. Returns a Context on success.
+    /// This may set up internal data structures or threads.
+    /// Corresponds to libusb_init().
+    init: func() -> result<_, libusb-error>;
+
+    /// Enumerate all USB devices on the system.
+    /// Returns a list of usb-device objects representing each device.
+    /// This corresponds to libusb_get_device_list().
+    /// The returned devices are new references managed by the backend.
+    list-devices: func() -> result<list<usb-device>, libusb-error>;
 }
