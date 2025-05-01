@@ -56,7 +56,7 @@ interface device {
 
         /// Allocate a USB 3 bulk stream
         /// This is used for bulk transfers with USB 3.0 devices.
-        alloc-streams: func(num-streams: u32, endpoints: list<u8>) -> result<u32, libusb-error>;
+        alloc-streams: func(num-streams: u32, endpoints: list<u8>) -> result<_, libusb-error>;
 
         /// Free a previously allocated USB 3 bulk stream
         /// This is used for bulk transfers with USB 3.0 devices.
@@ -90,7 +90,7 @@ interface device {
         close: func();
     }
 
-    /// Initialize the libusb backend. Returns a Context on success.
+    /// Initialize the libusb backend.
     /// This may set up internal data structures or threads.
     /// Corresponds to libusb_init().
     init: func() -> result<_, libusb-error>;
