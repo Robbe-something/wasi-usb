@@ -7,8 +7,8 @@ use crate::component::usb::device::{
 };
 use crate::component::usb::errors::LibusbError;
 use crate::component::usb::transfers::{HostTransfer, Transfer};
-use libusb_sys::{libusb_alloc_streams, libusb_alloc_transfer, libusb_attach_kernel_driver, libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close, libusb_config_descriptor, libusb_context, libusb_detach_kernel_driver, libusb_device, libusb_device_handle, libusb_free_config_descriptor, libusb_free_device_list, libusb_free_streams, libusb_free_transfer, libusb_get_config_descriptor, libusb_get_config_descriptor_by_value, libusb_get_configuration, libusb_get_device_list, libusb_handle_events, libusb_handle_events_timeout, libusb_has_capability, libusb_hotplug_callback_handle, libusb_hotplug_register_callback, libusb_init, libusb_kernel_driver_active, libusb_open, libusb_release_interface, libusb_reset_device, libusb_set_configuration, libusb_set_interface_alt_setting, libusb_set_option, libusb_transfer, libusb_transfer_set_stream_id, libusb_unref_device};
-use libusb_sys::{
+use libusb1_sys::{libusb_alloc_streams, libusb_alloc_transfer, libusb_attach_kernel_driver, libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close, libusb_config_descriptor, libusb_context, libusb_detach_kernel_driver, libusb_device, libusb_device_handle, libusb_free_config_descriptor, libusb_free_device_list, libusb_free_streams, libusb_free_transfer, libusb_get_config_descriptor, libusb_get_config_descriptor_by_value, libusb_get_configuration, libusb_get_device_list, libusb_handle_events, libusb_handle_events_timeout, libusb_has_capability, libusb_hotplug_callback_handle, libusb_hotplug_register_callback, libusb_init, libusb_kernel_driver_active, libusb_open, libusb_release_interface, libusb_reset_device, libusb_set_configuration, libusb_set_interface_alt_setting, libusb_set_option, libusb_transfer, libusb_transfer_set_stream_id, libusb_unref_device};
+use libusb1_sys::{
     libusb_submit_transfer
 };
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,9 +21,13 @@ use wasmtime::{Engine, Store};
 use wasmtime_wasi::bindings::Command;
 use wasmtime_wasi::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
 use env_logger;
-use libusb_sys::{LIBUSB_TRANSFER_COMPLETED, LIBUSB_TRANSFER_TYPE_BULK, LIBUSB_TRANSFER_TYPE_CONTROL, LIBUSB_TRANSFER_TYPE_INTERRUPT, LIBUSB_TRANSFER_TYPE_ISOCHRONOUS};
+use libusb1_sys::constants::{LIBUSB_CAP_HAS_HOTPLUG, LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED, LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT, LIBUSB_HOTPLUG_MATCH_ANY, LIBUSB_HOTPLUG_NO_FLAGS, LIBUSB_TRANSFER_COMPLETED, LIBUSB_TRANSFER_TYPE_BULK, LIBUSB_TRANSFER_TYPE_CONTROL, LIBUSB_TRANSFER_TYPE_INTERRUPT, LIBUSB_TRANSFER_TYPE_ISOCHRONOUS};
 use log::{debug, error, info, warn, LevelFilter};
 use once_cell::sync::Lazy;
+use crate::component::usb::usb_hotplug::{Event, Info};
+
+static HOTPLUG_QUEUE: Lazy<Mutex<VecDeque<(Event, Info)>>> =
+    Lazy::new(|| Mutex::new(VecDeque::new()));
 
 #[derive(Debug)]
 pub struct UsbTransfer {
@@ -56,6 +60,57 @@ bindgen!({
 
 });
 
+extern "system" fn hotplug_cb(_: *mut libusb_context,
+                                       dev: *mut libusb_device,
+                                       ev: libusb1_sys::libusb_hotplug_event,
+                                       _: *mut std::ffi::c_void) -> std::os::raw::c_int {
+            log::debug!("hotplug_cb called with event code: {:?}", ev);
+            unsafe {    // gather minimal info WITHOUT opening the device
+                let mut desc = std::mem::MaybeUninit::<libusb1_sys::libusb_device_descriptor>::uninit();
+                if libusb1_sys::libusb_get_device_descriptor(dev, desc.as_mut_ptr()) != 0 {
+                    log::error!("Failed to get device descriptor");
+                    return 0; // ignore
+                }
+                let desc = desc.assume_init();
+
+                let bus = libusb1_sys::libusb_get_bus_number(dev);
+                let addr = libusb1_sys::libusb_get_device_address(dev);
+                log::debug!(
+                    "Device details - bus: {}, address: {}, vendor: {:#06x}, product: {:#06x}",
+                    bus,
+                    addr,
+                    desc.idVendor,
+                    desc.idProduct
+                );
+
+                let info = Info {
+                    bus,
+                    address: addr,
+                    vendor: desc.idVendor,
+                    product: desc.idProduct,
+                };
+                let event = match ev {
+                    LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED => {
+                        log::info!("Device arrived: {:?}", info);
+                        Event::ARRIVED
+                    },
+                    LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT => {
+                        log::info!("Device left: {:?}", info);
+                        Event::LEFT
+                    },
+                    _ => {
+                        log::warn!("Unknown hotplug event: {:?}", ev);
+                        return 0;
+                    },
+                };
+
+                let mut q = HOTPLUG_QUEUE.lock().unwrap();
+                q.push_back((event, info));
+                log::debug!("Hotplug event pushed to queue");
+                0
+            }
+        }
+
 // Context struct for transfer callback
 struct TransferContext {
     sender: oneshot::Sender<std::result::Result<Vec<u8>, LibusbError>>,
@@ -82,6 +137,8 @@ struct MyState {
     context: Option<*mut libusb_context>, // do not need contexts as passing a nullptr will give the default context each time
     event_loop_flag: Option<Arc<AtomicBool>>,
     event_thread: Option<thread::JoinHandle<()>>,
+    hotplug_enabled: bool,
+    hotplug_handle: Option<libusb_hotplug_callback_handle>,
 }
 
 impl MyState {
@@ -92,11 +149,13 @@ impl MyState {
             context: None,
             event_loop_flag: None,
             event_thread: None,
+            hotplug_enabled: false,
+            hotplug_handle: None,
         }
     }
 }
 
-extern "C" fn transfer_callback(transfer: *mut libusb_transfer) {
+extern "system" fn transfer_callback(transfer: *mut libusb_transfer) {
     unsafe {
         // Reconstruct the context
         let ctx_ptr = (*transfer).user_data as *mut TransferContext;
@@ -177,7 +236,7 @@ extern "C" fn transfer_callback(transfer: *mut libusb_transfer) {
     }
 }
 
-extern "C" fn empty_callback(_transfer: *mut libusb_transfer) {}
+extern "system" fn empty_callback(_transfer: *mut libusb_transfer) {}
 
 impl IoView for MyState {
     fn table(&mut self) -> &mut ResourceTable {
@@ -878,6 +937,54 @@ impl component::usb::device::Host for MyState {
             log::info!("Returning {} device(s).", devices.len());
             Ok(Ok(devices))
         }
+    }
+}
+
+impl component::usb::usb_hotplug::Host for MyState {
+    async fn enable_hotplug(&mut self) -> Result<std::result::Result<(), LibusbError>> {
+        if self.hotplug_enabled {
+            return Ok(Ok(()));
+        }
+        unsafe {
+            if libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG) == 0 {
+                // no hotplug support
+                return Ok(Err(LibusbError::NotSupported));
+            }
+
+            let mut handle: libusb_hotplug_callback_handle = 0;
+            let rc = libusb_hotplug_register_callback(
+                self.context.unwrap(),
+                (LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT) as i32,
+                LIBUSB_HOTPLUG_NO_FLAGS,
+                LIBUSB_HOTPLUG_MATCH_ANY,
+                LIBUSB_HOTPLUG_MATCH_ANY,
+                LIBUSB_HOTPLUG_MATCH_ANY,
+                hotplug_cb,
+                std::ptr::null_mut(),
+                &mut handle
+            );
+            if rc < 0 {
+                return Ok(Err(LibusbError::from_raw(rc)));
+            }
+            self.hotplug_handle = Some(handle);
+            self.hotplug_enabled = true;
+        }
+
+        Ok(Ok(()))
+    }
+
+    async fn poll_events(&mut self) -> Result<Vec<(Event, Info)>> {
+        if let Some(ctx) = self.context {
+            let tv = libc::timeval { tv_sec: 0, tv_usec: 0 };
+            unsafe { libusb_handle_events_timeout(ctx, &tv) };
+        }
+
+        let mut q = HOTPLUG_QUEUE.lock().unwrap();
+        let mut out = Vec::with_capacity(q.len());
+        while let Some(ev) = q.pop_front() {
+            out.push(ev)
+        }
+        Ok(out)
     }
 }
 
