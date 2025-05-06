@@ -52,12 +52,8 @@ bindgen!({
         "component:usb/device/usb-device": UsbDevice,
         "component:usb/device/device-handle": UsbDeviceHandle,
     },
-
     trappable_imports: true,
-
     async: true
-
-
 });
 
 extern "system" fn hotplug_cb(_: *mut libusb_context,
