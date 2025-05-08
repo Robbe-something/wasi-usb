@@ -345,7 +345,7 @@ extern bool component_usb_transfers_method_transfer_cancel_transfer(component_us
 // Wait for the transfer to complete. This blocks until the transfer is done.
 // Returns Ok(data) if the transfer completed successfully, or an error code if it failed.
 // The data returned is the data received from the device (if applicable).
-extern bool component_usb_transfers_method_transfer_await_transfer(component_usb_transfers_borrow_transfer_t self, cguest_list_u8_t *ret, component_usb_transfers_libusb_error_t *err);
+extern bool component_usb_transfers_await_transfer(component_usb_transfers_own_transfer_t xfer, cguest_list_u8_t *ret, component_usb_transfers_libusb_error_t *err);
 
 // Imported Functions from `component:usb/device@0.2.1`
 // Open a device and return a handle for I/O operations.

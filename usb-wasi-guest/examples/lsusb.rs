@@ -8,6 +8,7 @@ use component::usb::{
     device,
     transfers::{TransferType, TransferSetup, TransferOptions},
 };
+use crate::component::usb::transfers;
 
 /// Issue a Control-IN transfer and return the received data.
 ///
@@ -37,7 +38,7 @@ fn control_in(
 
     // OUT buffer is empty for IN requests
     xfer.submit_transfer(&[]).expect("submit failed");
-    xfer.await_transfer()
+    transfers::await_transfer(xfer)
 }
 
 /// Decode UTF-16LE bytes from a string-descriptor into Rust UTF-8.

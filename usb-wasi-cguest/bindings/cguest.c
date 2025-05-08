@@ -10,8 +10,8 @@ extern void __wasm_import_component_usb_transfers_method_transfer_submit_transfe
 __attribute__((__import_module__("component:usb/transfers@0.2.1"), __import_name__("[method]transfer.cancel-transfer")))
 extern void __wasm_import_component_usb_transfers_method_transfer_cancel_transfer(int32_t, uint8_t *);
 
-__attribute__((__import_module__("component:usb/transfers@0.2.1"), __import_name__("[method]transfer.await-transfer")))
-extern void __wasm_import_component_usb_transfers_method_transfer_await_transfer(int32_t, uint8_t *);
+__attribute__((__import_module__("component:usb/transfers@0.2.1"), __import_name__("await-transfer")))
+extern void __wasm_import_component_usb_transfers_await_transfer(int32_t, uint8_t *);
 
 // Imported Functions from `component:usb/device@0.2.1`
 
@@ -290,11 +290,11 @@ bool component_usb_transfers_method_transfer_cancel_transfer(component_usb_trans
   }
 }
 
-bool component_usb_transfers_method_transfer_await_transfer(component_usb_transfers_borrow_transfer_t self, cguest_list_u8_t *ret, component_usb_transfers_libusb_error_t *err) {
+bool component_usb_transfers_await_transfer(component_usb_transfers_own_transfer_t xfer, cguest_list_u8_t *ret, component_usb_transfers_libusb_error_t *err) {
   __attribute__((__aligned__(sizeof(void*))))
   uint8_t ret_area[(3*sizeof(void*))];
   uint8_t *ptr = (uint8_t *) &ret_area;
-  __wasm_import_component_usb_transfers_method_transfer_await_transfer((self).__handle, ptr);
+  __wasm_import_component_usb_transfers_await_transfer((xfer).__handle, ptr);
   component_usb_transfers_result_list_u8_libusb_error_t result;
   switch ((int32_t) *((uint8_t*) (ptr + 0))) {
     case 0: {

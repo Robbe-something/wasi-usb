@@ -11,6 +11,8 @@ use component::usb::{
 };
 
 use component::usb::transfers::TransferType;
+use crate::component::usb;
+use crate::component::usb::transfers;
 use crate::component::usb::transfers::{TransferOptions, TransferSetup};
 
 #[tokio::main(flavor = "current_thread")]
@@ -59,7 +61,7 @@ async fn main() {
         .expect("new_transfer failed");
 
     xfer.submit_transfer(&*Vec::new()).expect("submit failed");
-    match xfer.await_transfer() {
+    match transfers::await_transfer(xfer) {
         Ok(data) => println!("Device descriptor bytes: {:02X?}", data),
         Err(e)   => println!("Transfer failed: {:?}", e),
     }

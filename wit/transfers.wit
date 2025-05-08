@@ -36,9 +36,11 @@ interface transfers {
         /// Returns Ok(_) if cancellation was successfully initiated. If the transfer had already completed or was not found, an error may be returned (e.g., not_found).
         cancel-transfer: func() -> result<_, libusb-error>;
 
-        /// Wait for the transfer to complete. This blocks until the transfer is done.
-        /// Returns Ok(data) if the transfer completed successfully, or an error code if it failed.
-        /// The data returned is the data received from the device (if applicable).
-        await-transfer: func() -> result<list<u8>, libusb-error>;
     }
+
+
+    /// Wait for the transfer to complete. This blocks until the transfer is done.
+    /// Returns Ok(data) if the transfer completed successfully, or an error code if it failed.
+    /// The data returned is the data received from the device (if applicable).
+    await-transfer: func(xfer: transfer) -> result<list<u8>, libusb-error>;
 }
