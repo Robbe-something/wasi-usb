@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::sync::oneshot;
 use wasmtime::component::*;
-use wasmtime::{Config, Result};
+use wasmtime::{Config, Error};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::bindings::Command;
 use wasmtime_wasi::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
@@ -394,7 +394,8 @@ impl HostTransfer for MyState {
             error!("Transfer receiver not set");
             return Err(LibusbError::NotFound);
         }
-        let receiver = usb_transfer.receiver.take().unwrap();
+
+        let receiver = usb_transfer.receiver.take().ok_or(LibusbError::NotFound)?;
         info!("Transfer receiver set");
 
         match receiver.await {
@@ -406,7 +407,7 @@ impl HostTransfer for MyState {
         }
     }
 
-    async fn drop(&mut self, rep: Resource<UsbTransfer>) -> Result<()> {
+    async fn drop(&mut self, rep: Resource<UsbTransfer>) -> Result<(), Error> {
         println!("Drop transfer");
         if let Ok(transfer) = self.table.get(&rep) {
             unsafe {
@@ -439,7 +440,7 @@ impl HostUsbDevice for MyState {
             }
 
             let handle = UsbDeviceHandle { handle: handle_ptr };
-            let resource = self.table.push(handle).unwrap();
+            let resource = self.table.push(handle).or(Err(LibusbError::Other))?;
             (Ok(resource))
         }
     }
@@ -499,7 +500,7 @@ impl HostUsbDevice for MyState {
         }
     }
 
-    async fn drop(&mut self, rep: Resource<UsbDevice>) -> Result<()> {
+    async fn drop(&mut self, rep: Resource<UsbDevice>) -> Result<(), wasmtime::Error> {
         println!("Drop device");
         if let Ok(device) = self.table.get(&rep) {
             unsafe {
@@ -815,7 +816,7 @@ impl HostDeviceHandle for MyState {
                 buf_len: buf_size,
                 completed: Arc::new(AtomicBool::new(false)),
                 receiver: None,
-            }).unwrap();
+            }).or(Err(LibusbError::Other))?;
             log::info!("Transfer resource created successfully");
 
             (Ok(transfer_resource))
@@ -838,7 +839,7 @@ impl HostDeviceHandle for MyState {
         (())
     }
 
-    async fn drop(&mut self, rep: Resource<UsbDeviceHandle>) -> Result<()> {
+    async fn drop(&mut self, rep: Resource<UsbDeviceHandle>) -> Result<(), wasmtime::Error> {
         println!("Drop device handle: {}", rep.owned());
         if let Ok(handle) = self.table.get(&rep) {
             unsafe {
@@ -890,7 +891,7 @@ impl component::usb::device::Host for MyState {
             let mut list_ptr: *mut *mut libusb_device = std::ptr::null_mut();
             log::info!("libusb_get_device_list called.");
             let cnt =
-                libusb_get_device_list(self.context.unwrap(), &mut list_ptr as *mut _ as *mut _);
+                libusb_get_device_list(self.context.ok_or(LibusbError::NotFound)?, &mut list_ptr as *mut _ as *mut _);
             log::info!("libusb_get_device_list returned count: {}", cnt);
             if cnt < 0 {
                 return (Err(LibusbError::from_raw(cnt as i32)));
@@ -903,7 +904,7 @@ impl component::usb::device::Host for MyState {
                     continue;
                 }
                 log::info!("Adding device at index {}.", i);
-                let resource = self.table.push(UsbDevice { device: dev }).unwrap();
+                let resource = self.table.push(UsbDevice { device: dev }).or(Err(LibusbError::Other))?;
                 devices.push(resource);
             }
             log::info!("Freeing device list pointer.");
@@ -927,7 +928,7 @@ impl component::usb::usb_hotplug::Host for MyState {
 
             let mut handle: libusb_hotplug_callback_handle = 0;
             let rc = libusb_hotplug_register_callback(
-                self.context.unwrap(),
+                self.context.ok_or(LibusbError::NotFound)?,
                 (LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT) as i32,
                 LIBUSB_HOTPLUG_NO_FLAGS,
                 LIBUSB_HOTPLUG_MATCH_ANY,
@@ -964,7 +965,7 @@ impl component::usb::usb_hotplug::Host for MyState {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Error> {
     
     env_logger::Builder::new()
         .filter_module("usb_wasi_host", LevelFilter::Debug)
