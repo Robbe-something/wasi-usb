@@ -26,6 +26,6 @@ build:
 	cd ../usb-wasi-host && cargo build $(HOST_BUILD_FLAG)
 
 run: build
-	time $(HOST) $(WASM)
+	time $(HOST) -c $(WASM)
 
 .PHONY: build run

@@ -29,9 +29,12 @@ use libusb1_sys::{
 use log::{debug, error, info, warn, LevelFilter};
 use once_cell::sync::Lazy;
 use std::collections::VecDeque;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use clap::Parser;
 use tokio::sync::oneshot;
 use wasmtime::component::*;
 use wasmtime::{Config, Error};
@@ -143,6 +146,41 @@ unsafe impl Sync for UsbTransfer {}
 
 unsafe impl Send for MyState {}
 unsafe impl Sync for MyState {}
+
+#[derive(Parser)]
+#[command(name = "usb-wasi-host", about)]
+struct CliParser {
+    #[arg(short, long)]
+    component_path: PathBuf,
+
+    #[arg(long, short = 'd')]
+    usb_devices: Vec<USBDeviceIdentifier>,
+
+    #[arg(long, short)]
+    use_allow_list: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct USBDeviceIdentifier {
+    vendor_id: u16,
+    product_id: u16
+}
+
+impl FromStr for USBDeviceIdentifier {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 2 {
+            return Err("Invalid format. Expected vendor_id:product_id");
+        }
+
+        let vendor_id = u16::from_str_radix(parts[0], 16).map_err(|_| "Invalid vendor_id")?;
+        let product_id = u16::from_str_radix(parts[1], 16).map_err(|_| "Invalid product_id")?;
+
+        Ok(Self { vendor_id, product_id })
+    }
+}
 
 struct MyState {
     table: ResourceTable,
@@ -1017,6 +1055,7 @@ impl component::usb::usb_hotplug::Host for MyState {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    let cli = CliParser::parse();
     env_logger::Builder::new()
         .filter_module("usb_wasi_host", LevelFilter::Debug)
         .filter_module("usb_wasi_host", LevelFilter::Trace)
@@ -1029,13 +1068,12 @@ async fn main() -> Result<(), Error> {
         eprintln!("Usage: {} <path_to_component>", args[0]);
         std::process::exit(1);
     }
-    let component_path = &args[1];
     let engine = Engine::new(
         Config::new()
             .async_support(true)
             .wasm_component_model_async(true),
     )?;
-    let component = Component::from_file(&engine, component_path)?;
+    let component = Component::from_file(&engine, cli.component_path)?;
     let mut linker = Linker::new(&engine);
     Host_::add_to_linker(&mut linker, |state: &mut MyState| state)?;
     wasmtime_wasi::add_to_linker_async(&mut linker)?;
