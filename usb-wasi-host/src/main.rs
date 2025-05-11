@@ -77,7 +77,7 @@ extern "system" fn hotplug_cb(
     _: *mut libusb_context,
     dev: *mut libusb_device,
     ev: libusb1_sys::libusb_hotplug_event,
-    _: *mut std::ffi::c_void,
+    user_data: *mut std::ffi::c_void,
 ) -> std::os::raw::c_int {
     debug!("hotplug_cb called with event code: {:?}", ev);
     unsafe {
@@ -94,6 +94,15 @@ extern "system" fn hotplug_cb(
             vendor_id,
             product_id,
         };
+
+        debug!("before allowed_devices init");
+        let allowed_devices = &*(user_data as *const Mutex<AllowedUSBDevices>);
+        debug!("after allowed_devices.lock()");
+        if !allowed_devices.lock().unwrap().is_allowed(&device_id) {
+            log::warn!("Device not allowed: {:?}", device_id);
+            return 0; // ignore
+        }
+        debug!("Device allowed: {:?}", device_id);
 
         let bus = libusb1_sys::libusb_get_bus_number(dev);
         let addr = libusb1_sys::libusb_get_device_address(dev);
@@ -1056,6 +1065,9 @@ impl component::usb::usb_hotplug::Host for MyState {
                 return Err(LibusbError::NotSupported);
             }
 
+            let allowed_devices = Arc::new(Mutex::new(self.allowed_usbdevices.clone()));
+            let user_data = Arc::into_raw(allowed_devices) as *mut std::ffi::c_void;
+
             let mut handle: libusb_hotplug_callback_handle = 0;
             let rc = libusb_hotplug_register_callback(
                 self.context.ok_or(LibusbError::NotFound)?,
@@ -1065,7 +1077,7 @@ impl component::usb::usb_hotplug::Host for MyState {
                 LIBUSB_HOTPLUG_MATCH_ANY,
                 LIBUSB_HOTPLUG_MATCH_ANY,
                 hotplug_cb,
-                std::ptr::null_mut(),
+                user_data,
                 &mut handle,
             );
             if rc < 0 {
