@@ -12,7 +12,7 @@ use libusb1_sys::constants::{
     LIBUSB_TRANSFER_TYPE_BULK, LIBUSB_TRANSFER_TYPE_CONTROL, LIBUSB_TRANSFER_TYPE_INTERRUPT,
     LIBUSB_TRANSFER_TYPE_ISOCHRONOUS,
 };
-use libusb1_sys::libusb_submit_transfer;
+use libusb1_sys::{libusb_device_descriptor, libusb_get_device_descriptor, libusb_submit_transfer};
 use libusb1_sys::{
     libusb_alloc_streams, libusb_alloc_transfer, libusb_attach_kernel_driver,
     libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close,
@@ -88,6 +88,12 @@ extern "system" fn hotplug_cb(
             return 0; // ignore
         }
         let desc = desc.assume_init();
+        let vendor_id = desc.idVendor;
+        let product_id = desc.idProduct;
+        let device_id = USBDeviceIdentifier {
+            vendor_id,
+            product_id,
+        };
 
         let bus = libusb1_sys::libusb_get_bus_number(dev);
         let addr = libusb1_sys::libusb_get_device_address(dev);
@@ -182,6 +188,21 @@ impl FromStr for USBDeviceIdentifier {
     }
 }
 
+#[derive(Debug, Clone)]
+enum AllowedUSBDevices {
+    Allowed(Vec<USBDeviceIdentifier>),
+    Denied(Vec<USBDeviceIdentifier>)
+}
+
+impl AllowedUSBDevices {
+    fn is_allowed(&self, device: &USBDeviceIdentifier) -> bool {
+        match self {
+            Self::Allowed(devices) => devices.contains(device),
+            Self::Denied(devices) => !devices.contains(device)
+        }
+    }
+}
+
 struct MyState {
     table: ResourceTable,
     ctx: WasiCtx,
@@ -190,10 +211,11 @@ struct MyState {
     event_thread: Option<thread::JoinHandle<()>>,
     hotplug_enabled: bool,
     hotplug_handle: Option<libusb_hotplug_callback_handle>,
+    allowed_usbdevices: AllowedUSBDevices,
 }
 
 impl MyState {
-    pub fn new() -> Self {
+    pub fn new(allowed_usbdevices: AllowedUSBDevices) -> Self {
         Self {
             table: ResourceTable::new(),
             ctx: WasiCtxBuilder::new().inherit_stdio().build(),
@@ -202,6 +224,7 @@ impl MyState {
             event_thread: None,
             hotplug_enabled: false,
             hotplug_handle: None,
+            allowed_usbdevices,
         }
     }
 }
@@ -992,6 +1015,26 @@ impl component::usb::device::Host for MyState {
                     .table
                     .push(UsbDevice { device: dev })
                     .or(Err(LibusbError::Other))?;
+                let mut desc = std::mem::MaybeUninit::<libusb1_sys::libusb_device_descriptor>::uninit();
+                let res = libusb_get_device_descriptor(dev, desc.as_mut_ptr());
+                if res < 0 {
+                    warn!("Failed to get device descriptor for device at index {}: {}", i, res);
+                    continue;
+                }
+                let device_desc = desc.assume_init();
+                let vendor_id = device_desc.idVendor;
+                let product_id = device_desc.idProduct;
+                let usb_device = USBDeviceIdentifier {
+                    vendor_id,
+                    product_id,
+                };
+                debug!("{:?}", usb_device);
+                if !self.allowed_usbdevices.is_allowed(&usb_device) {
+                    warn!("Device at index {} is not allowed, freeing device.", i);
+                    libusb_unref_device(dev);
+                    continue;
+                }
+                info!("Device at index {} is allowed.", i);
                 devices.push(resource);
             }
             info!("Freeing device list pointer.");
@@ -1073,11 +1116,17 @@ async fn main() -> Result<(), Error> {
             .async_support(true)
             .wasm_component_model_async(true),
     )?;
+    debug!("{:?}", cli.usb_devices);
+    let allowed_usbdevices = if cli.use_allow_list {
+        AllowedUSBDevices::Allowed(cli.usb_devices)
+    } else {
+        AllowedUSBDevices::Denied(cli.usb_devices)
+    };
     let component = Component::from_file(&engine, cli.component_path)?;
     let mut linker = Linker::new(&engine);
     Host_::add_to_linker(&mut linker, |state: &mut MyState| state)?;
     wasmtime_wasi::add_to_linker_async(&mut linker)?;
-    let mut store = Store::new(&engine, MyState::new());
+    let mut store = Store::new(&engine, MyState::new(allowed_usbdevices));
     let command = Command::instantiate_async(&mut store, &component, &linker).await?;
     command.wasi_cli_run().call_run(store).await?.unwrap();
     info!("WASM component finished");
