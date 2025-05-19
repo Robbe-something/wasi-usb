@@ -1,3 +1,4 @@
+use libc::timeval;
 use libusb1_sys::constants::{
     LIBUSB_CAP_HAS_HOTPLUG, LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED, LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
     LIBUSB_HOTPLUG_MATCH_ANY, LIBUSB_HOTPLUG_NO_FLAGS, LIBUSB_TRANSFER_COMPLETED,
@@ -438,7 +439,7 @@ impl HostTransfer for MyState {
             (*transfer_ptr).user_data = Box::into_raw(ctx) as *mut _;
             (*transfer_ptr).callback = transfer_callback;
 
-            debug!("submitting transfer");
+            debug!("submitting transfer: {:?}", transfer_ptr);
             let submit_result = libusb_submit_transfer(transfer_ptr);
             if submit_result < 0 {
                 error!(
@@ -981,12 +982,14 @@ impl component::usb::device::Host for MyState {
             let flag = Arc::new(AtomicBool::new(true));
             self.event_loop_flag = Some(flag.clone());
             let ctx_num = ctx as usize;
-            //spawn new thread to handle events such as hotplug
+            //spawn new thread to handle events (with timeout)
             let handle = thread::spawn(move || {
+                let ctx = ctx_num as *mut libusb_context;
+                let tv = timeval { tv_sec: 0, tv_usec: 20_000 }; // 20 ms
                 while flag.load(Ordering::SeqCst) {
-                    let rc = libusb_handle_events_completed(ctx_num as *mut libusb_context, std::ptr::null_mut());
+                    let rc = libusb_handle_events_timeout_completed(ctx_num as *mut libusb_context, &tv, std::ptr::null_mut());
                     if rc < 0 {
-                        println!("Error in libusb_handle_events: {}", rc);
+                        eprintln!("Error in libusb_handle_events_timeout: {}", rc);
                         break;
                     }
                 }

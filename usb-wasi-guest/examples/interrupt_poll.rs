@@ -37,18 +37,22 @@ fn main() {
     handle.set_interface_altsetting(1, 0).expect("altsetting");
 
     let setup = TransferSetup { bm_request_type: 0, b_request: 0, w_value: 0, w_index: 0 };
-    let opts = TransferOptions { endpoint: 0x81, timeout_ms: 2000, stream_id: 0, iso_packets: 0 };
+    let opts = TransferOptions { endpoint: 0x82, timeout_ms: 200, stream_id: 0, iso_packets: 0 };
 
-    for i in 0..10 {
+    for i in 0..1000 {
         let xfer = handle
             .new_transfer(TransferType::Interrupt, setup, 8, opts)
             .expect("new_transfer");
         xfer.submit_transfer(&[]).expect("submit_transfer");
-
+        // start timer
+        let start = std::time::Instant::now();
         match transfers::await_transfer(xfer) {
             Ok(buf) => println!("Iteration {}: {:?} bytes: {:?}", i, buf.len(), buf),
             Err(e)  => println!("Iteration {}: error {:?}", i, e),
         }
+        // stop timer
+        let elapsed = start.elapsed();
+        println!("Elapsed time: {:?}", elapsed);
     }
 
     handle.release_interface(1).expect("release_interface");
