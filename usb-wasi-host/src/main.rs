@@ -95,6 +95,10 @@ struct CliParser {
 
     #[arg(long, short)]
     use_allow_list: bool,
+
+    // set the debug level
+    #[arg(long = "debug_level", short = 'l', default_value = "info")]
+    debug_level: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -643,6 +647,7 @@ impl HostDeviceHandle for MyState {
         let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
         unsafe {
             let res = libusb_claim_interface(usb_device_handle.handle, ifac as i32);
+            println!("Claim interface result: {:?}", res);
             match res {
                 0.. => Ok(()),
                 _ => Err(LibusbError::from_raw(res)),
@@ -1098,9 +1103,9 @@ impl component::usb::usb_hotplug::Host for MyState {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let cli = CliParser::parse();
+    // Initialize the logger
     env_logger::Builder::new()
-        .filter_module("usb_wasi_host", LevelFilter::Debug)
-        .filter_module("usb_wasi_host", LevelFilter::Trace)
+        .filter_module("usb_wasi_host", cli.debug_level.parse().unwrap_or(LevelFilter::Info))
         .init();
 
     info!("Starting WASM component");

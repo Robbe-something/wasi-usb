@@ -60,7 +60,7 @@ fn main() {
     //----------------------------------------
     // 1: initialise backend
     //----------------------------------------
-    device::init().expect("libusb init failed");
+        device::init().expect("libusb init failed");
 
     //----------------------------------------
     // 2: list and iterate devices
@@ -102,14 +102,33 @@ fn main() {
             handle.close();
             continue;
         }
+        // parse full device descriptor fields
+        let usb_version    = u16::from_le_bytes([ddesc[2], ddesc[3]]);
+        let dev_class      = ddesc[4];
+        let dev_subclass   = ddesc[5];
+        let dev_protocol   = ddesc[6];
+        let max_packet0    = ddesc[7];
+        let dev_release    = u16::from_le_bytes([ddesc[12], ddesc[13]]);
+        let mfg_idx        = ddesc[14];
+        let prod_idx       = ddesc[15];
+        let serial_idx     = ddesc[16];
+        let num_cfg        = ddesc[17];
+
+        // print descriptor details
+        println!("  bcdUSB             {:04x}", usb_version);
+        println!("  Device Class       {:#04x}", dev_class);
+        println!("  Subclass           {:#04x}", dev_subclass);
+        println!("  Protocol           {:#04x}", dev_protocol);
+        println!("  MaxPacketSize0     {}", max_packet0);
+        println!("  bcdDevice          {:04x}", dev_release);
+        println!("  iManufacturer idx  {}", mfg_idx);
+        println!("  iProduct idx       {}", prod_idx);
+        println!("  iSerialNumber idx  {}", serial_idx);
+        println!("  NumConfigurations  {}", num_cfg);
+
         let vid = u16::from_le_bytes([ddesc[8],  ddesc[9]]);
         let pid = u16::from_le_bytes([ddesc[10], ddesc[11]]);
-        let mfg_idx  = ddesc[14];
-        let prod_idx = ddesc[15];
-        let num_cfg  = ddesc[17];
-
         println!("  VID:PID            {:04x}:{:04x}", vid, pid);
-        println!("  Configurations     {}", num_cfg);
 
         //------------------------------------
         // fetch manufacturer / product strings (if any)

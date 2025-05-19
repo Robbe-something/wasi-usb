@@ -26,6 +26,6 @@ build:
 	cd ../usb-wasi-host && cargo build $(HOST_BUILD_FLAG)
 
 run: build
-	time $(HOST) -c $(WASM) --usb-devices 05ac:139d --usb-devices 05ac:12a8 --use-allow-list
+	time $(HOST) -c $(WASM) --usb-devices 05ac:139d --usb-devices 05ac:12a8 -l trace --use-allow-list
 
 .PHONY: build run
