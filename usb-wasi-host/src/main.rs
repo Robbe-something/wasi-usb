@@ -5,7 +5,7 @@ use libusb1_sys::constants::{
     LIBUSB_TRANSFER_TYPE_BULK, LIBUSB_TRANSFER_TYPE_CONTROL, LIBUSB_TRANSFER_TYPE_INTERRUPT,
     LIBUSB_TRANSFER_TYPE_ISOCHRONOUS,
 };
-use libusb1_sys::{libusb_alloc_streams, libusb_alloc_transfer, libusb_attach_kernel_driver, libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close, libusb_config_descriptor, libusb_context, libusb_detach_kernel_driver, libusb_device, libusb_device_handle, libusb_free_config_descriptor, libusb_free_device_list, libusb_free_streams, libusb_free_transfer, libusb_get_config_descriptor, libusb_get_config_descriptor_by_value, libusb_get_configuration, libusb_get_device_list, libusb_handle_events, libusb_handle_events_timeout, libusb_has_capability, libusb_hotplug_callback_handle, libusb_hotplug_register_callback, libusb_init, libusb_kernel_driver_active, libusb_open, libusb_release_interface, libusb_reset_device, libusb_set_configuration, libusb_set_interface_alt_setting, libusb_transfer, libusb_transfer_set_stream_id, libusb_unref_device, libusb_device_descriptor, libusb_get_device_descriptor, libusb_submit_transfer, libusb_handle_events_timeout_completed, libusb_handle_events_completed, libusb_exit};
+use libusb1_sys::{libusb_alloc_streams, libusb_alloc_transfer, libusb_attach_kernel_driver, libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close, libusb_config_descriptor, libusb_context, libusb_detach_kernel_driver, libusb_device, libusb_device_handle, libusb_free_config_descriptor, libusb_free_device_list, libusb_free_streams, libusb_free_transfer, libusb_get_config_descriptor, libusb_get_config_descriptor_by_value, libusb_get_configuration, libusb_get_device_list, libusb_handle_events, libusb_handle_events_timeout, libusb_has_capability, libusb_hotplug_callback_handle, libusb_hotplug_register_callback, libusb_init, libusb_kernel_driver_active, libusb_open, libusb_release_interface, libusb_reset_device, libusb_set_configuration, libusb_set_interface_alt_setting, libusb_transfer, libusb_transfer_set_stream_id, libusb_unref_device, libusb_device_descriptor, libusb_get_device_descriptor, libusb_submit_transfer, libusb_handle_events_timeout_completed, libusb_handle_events_completed, libusb_exit, libusb_ref_device};
 
 use wasmtime::component::*;
 use wasmtime::{Config, Error};
@@ -34,7 +34,7 @@ use crate::component::usb::errors::LibusbError;
 use crate::component::usb::transfers::{HostTransfer, Transfer};
 use crate::component::usb::usb_hotplug::{Event, Info};
 
-static HOTPLUG_QUEUE: Lazy<Mutex<VecDeque<(Event, Info)>>> =
+static HOTPLUG_QUEUE: Lazy<Mutex<VecDeque<(Event, Info, UsbDevice)>>> =
     Lazy::new(|| Mutex::new(VecDeque::new()));
 
 #[derive(Debug)]
@@ -186,7 +186,7 @@ extern "system" fn hotplug_cb(
             vendor_id,
             product_id,
         };
-
+        
         debug!("before allowed_devices init");
         let allowed_devices = &*(user_data as *const Mutex<AllowedUSBDevices>);
         debug!("after allowed_devices.lock()");
@@ -195,7 +195,7 @@ extern "system" fn hotplug_cb(
             return 0; // ignore
         }
         debug!("Device allowed: {:?}", device_id);
-
+        
         let bus = libusb1_sys::libusb_get_bus_number(dev);
         let addr = libusb1_sys::libusb_get_device_address(dev);
         debug!(
@@ -205,7 +205,7 @@ extern "system" fn hotplug_cb(
             desc.idVendor,
             desc.idProduct
         );
-
+        
         let info = Info {
             bus,
             address: addr,
@@ -227,8 +227,11 @@ extern "system" fn hotplug_cb(
             }
         };
 
+        // Need to increase refcount before storing in queue
+        libusb_ref_device(dev); // Add this line to increment reference count
+        
         let mut q = HOTPLUG_QUEUE.lock().unwrap();
-        q.push_back((event, info));
+        q.push_back((event, info, UsbDevice{ device: dev }));
         debug!("Hotplug event pushed to queue");
         0
     }
@@ -1092,12 +1095,17 @@ impl component::usb::usb_hotplug::Host for MyState {
         Ok(())
     }
 
-    fn poll_events(&mut self) -> Vec<(Event, Info)> {
-
+    fn poll_events(&mut self) -> Vec<(Event, Info, Resource<UsbDevice>)> {
         let mut q = HOTPLUG_QUEUE.lock().unwrap();
         let mut out = Vec::with_capacity(q.len());
         while let Some(ev) = q.pop_front() {
-            out.push(ev)
+            let device = self
+                .table
+                .push(ev.2)
+                .or(Err(LibusbError::Other))
+                .unwrap();
+            let ev2 = (ev.0, ev.1, device);
+            out.push(ev2);
         }
         out
     }

@@ -2,7 +2,7 @@ package component:usb@0.2.1;
 
 interface usb-hotplug {
     use errors.{libusb-error};
-
+    use device.{usb-device};
 
     flags event { arrived, left }
 
@@ -14,5 +14,5 @@ interface usb-hotplug {
     }
 
     enable-hotplug: func() -> result<_, libusb-error>;
-    poll-events: func() -> list<tuple<event, info>>;
+    poll-events: func() -> list<tuple<event, info, usb-device>>;
 }

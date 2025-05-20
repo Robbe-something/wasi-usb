@@ -5,8 +5,9 @@ This is a test program to compile c to wasm and run it with the custom component
 ## generating the bindings
 
 ```bash
-# install wit-bindgen
-cargo install wit-bindgen
+# install wit-bindgen and wasm-tools
+cargo install wit-bindgen-cli
+cargo install --locked wasm-tools
 # use wit-bindgen to generate the bindings
 # wit-bindgen c ../wit --world cguest --out-dir bindings
 ```
@@ -36,5 +37,5 @@ wasm-tools component new out/program.wasm \
 ## Run
 ```bash
 # run the program with the custom wasmtime runtime
-../usb-wasi-host/target/release/usb-wasi-host out/program.component.wasm
+../usb-wasi-host/target/debug/usb-wasi-host -c out/program.component.wasm
 ```

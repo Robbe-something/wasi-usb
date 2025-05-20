@@ -30,7 +30,7 @@ fn main() {
         println!("Waiting for events...");
 
         // poll_events now gives Vec<(Event, Info)> directly
-        for (event, info) in usb_hotplug::poll_events() {
+        for (event, info, _) in usb_hotplug::poll_events() {
             match event {
                 usb_hotplug::Event::ARRIVED => println!(
                     "ARRIVED bus {:03} addr {:03} {:04x}:{:04x}",
