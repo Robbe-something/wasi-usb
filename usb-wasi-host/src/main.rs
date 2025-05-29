@@ -5,31 +5,29 @@ use libusb1_sys::constants::{
     LIBUSB_TRANSFER_TYPE_BULK, LIBUSB_TRANSFER_TYPE_CONTROL, LIBUSB_TRANSFER_TYPE_INTERRUPT,
     LIBUSB_TRANSFER_TYPE_ISOCHRONOUS,
 };
-use libusb1_sys::{libusb_alloc_streams, libusb_alloc_transfer, libusb_attach_kernel_driver, libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close, libusb_config_descriptor, libusb_context, libusb_detach_kernel_driver, libusb_device, libusb_device_handle, libusb_free_config_descriptor, libusb_free_device_list, libusb_free_streams, libusb_free_transfer, libusb_get_config_descriptor, libusb_get_config_descriptor_by_value, libusb_get_configuration, libusb_get_device_list, libusb_handle_events, libusb_handle_events_timeout, libusb_has_capability, libusb_hotplug_callback_handle, libusb_hotplug_register_callback, libusb_init, libusb_kernel_driver_active, libusb_open, libusb_release_interface, libusb_reset_device, libusb_set_configuration, libusb_set_interface_alt_setting, libusb_transfer, libusb_transfer_set_stream_id, libusb_unref_device, libusb_device_descriptor, libusb_get_device_descriptor, libusb_submit_transfer, libusb_handle_events_timeout_completed, libusb_handle_events_completed, libusb_exit, libusb_ref_device};
+use libusb1_sys::{libusb_alloc_streams, libusb_alloc_transfer, libusb_attach_kernel_driver, libusb_cancel_transfer, libusb_claim_interface, libusb_clear_halt, libusb_close, libusb_config_descriptor, libusb_context, libusb_detach_kernel_driver, libusb_device, libusb_device_handle, libusb_free_config_descriptor, libusb_free_device_list, libusb_free_streams, libusb_free_transfer, libusb_get_config_descriptor, libusb_get_config_descriptor_by_value, libusb_get_configuration, libusb_get_device_list, libusb_handle_events, libusb_handle_events_timeout, libusb_has_capability, libusb_hotplug_callback_handle, libusb_hotplug_register_callback, libusb_init, libusb_kernel_driver_active, libusb_open, libusb_release_interface, libusb_reset_device, libusb_set_configuration, libusb_set_interface_alt_setting, libusb_transfer, libusb_transfer_set_stream_id, libusb_unref_device, libusb_device_descriptor, libusb_get_device_descriptor, libusb_submit_transfer, libusb_handle_events_timeout_completed, libusb_handle_events_completed, libusb_exit, libusb_ref_device, libusb_get_active_config_descriptor, libusb_get_bus_number, libusb_get_device_address, libusb_get_port_number, libusb_get_device_speed, libusb_get_string_descriptor_ascii, libusb_control_setup};
 
 use wasmtime::component::*;
 use wasmtime::{Config, Error};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::bindings::Command;
-use wasmtime_wasi::{IoView, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{DirPerms, FilePerms, IoView, WasiCtx, WasiCtxBuilder, WasiView};
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::{env, thread};
 
-use log::{debug, error, info, warn, LevelFilter};
+use log::{debug, error, info, trace, warn, LevelFilter};
 use once_cell::sync::Lazy;
 use clap::Parser;
 use tokio::sync::oneshot;
 
 use crate::component::usb::configuration::ConfigValue;
-use crate::component::usb::descriptors::ConfigurationDescriptor;
-use crate::component::usb::device::{
-    HostDeviceHandle, HostUsbDevice, TransferOptions, TransferSetup, TransferType,
-};
+use crate::component::usb::descriptors::{ConfigurationDescriptor, DeviceDescriptor, InterfaceDescriptor};
+use crate::component::usb::device::{DeviceLocation, EndpointDescriptor, HostDeviceHandle, HostUsbDevice, TransferOptions, TransferSetup, TransferType, UsbSpeed};
 use crate::component::usb::errors::LibusbError;
 use crate::component::usb::transfers::{HostTransfer, Transfer};
 use crate::component::usb::usb_hotplug::{Event, Info};
@@ -44,6 +42,7 @@ pub struct UsbTransfer {
     pub buffer: Option<Box<[u8]>>,
     pub buf_len: u32,
     receiver: Option<oneshot::Receiver<Result<Vec<u8>, LibusbError>>>,
+    control_setup: Option<TransferSetup>
 }
 pub struct UsbDevice {
     device: *mut libusb_device,
@@ -154,7 +153,10 @@ impl MyState {
     pub fn new(allowed_usbdevices: AllowedUSBDevices) -> Self {
         Self {
             table: ResourceTable::new(),
-            ctx: WasiCtxBuilder::new().inherit_stdio().build(),
+            ctx: WasiCtxBuilder::new()
+                .inherit_stdio()
+                .preopened_dir(env::current_dir().expect("failed to open dir"), ".", DirPerms::all(), FilePerms::all()).expect("failed to open dir")
+                .build(),
             context: None,
             event_loop_flag: None,
             event_thread: None,
@@ -264,16 +266,24 @@ extern "system" fn transfer_callback(transfer: *mut libusb_transfer) {
                 } else if (*transfer).transfer_type == LIBUSB_TRANSFER_TYPE_CONTROL {
                     // Control transfer
                     // For control IN (device-to-host): skip setup packet (first 8 bytes)
-                    // For control OUT: no data to return
                     let actual_len = (*transfer).actual_length as usize;
-                    if actual_len > 8 {
-                        let data_len = actual_len - 8;
-                        let buf_ptr = (*transfer).buffer;
-                        if !buf_ptr.is_null() && data_len > 0 {
+                    debug!("Control transfer completed with actual length: {}", actual_len);
+                    
+                    // Extract request type from the setup packet
+                    let buf_ptr = (*transfer).buffer;
+                    let bm_request_type = if !buf_ptr.is_null() { *buf_ptr } else { 0 };
+                    let is_device_to_host = (bm_request_type & 0x80) != 0;
+                    
+                    if is_device_to_host && actual_len > 0 {
+                        // For IN transfers, return the data after the setup packet
+                        if !buf_ptr.is_null() {
+                            // Get the data portion (skipping 8-byte setup)
                             let data_slice = std::slice::from_raw_parts(buf_ptr.add(8), actual_len);
                             data_vec = data_slice.to_vec();
+                            debug!("Control IN transfer data: {:?}", data_vec);
                         }
                     } else {
+                        // For OUT transfers, no data to return
                         data_vec = Vec::new();
                     }
                 } else {
@@ -332,7 +342,7 @@ impl WasiView for MyState {
     }
 }
 
-    impl LibusbError {
+impl LibusbError {
     /// Convert a raw `libusb_error` integer value to a `LibusbError` variant.
     pub fn from_raw(value: i32) -> Self {
         match value {
@@ -350,6 +360,21 @@ impl WasiView for MyState {
             -12 => LibusbError::NotSupported,
             -99 => LibusbError::Other,
             _ => LibusbError::Other, // Default to `Other` for unknown error codes
+        }
+    }
+}
+
+impl UsbSpeed {
+    pub fn from_raw(value: u8) -> Self {
+        match value {
+            0 => UsbSpeed::Unknown,
+            1 => UsbSpeed::Low,
+            2 => UsbSpeed::Full,
+            3 => UsbSpeed::High,
+            4 => UsbSpeed::Super,
+            5 => UsbSpeed::SuperPlus,
+            6 => UsbSpeed::SuperPlusX2,
+            _ => UsbSpeed::Unknown,
         }
     }
 }
@@ -380,7 +405,7 @@ impl HostTransfer for MyState {
             if transfer_type == LIBUSB_TRANSFER_TYPE_CONTROL {
                 let setup_buf = (*transfer_ptr).buffer;
                 if !setup_buf.is_null() {
-                    let bm_request_type = *setup_buf;
+                    let bm_request_type = usb_transfer.control_setup.unwrap().bm_request_type;
                     let direction_in = bm_request_type & 0x80 != 0;
                     if direction_in {
                         // control transfer IN
@@ -477,7 +502,7 @@ impl HostTransfer for MyState {
     }
 
     fn drop(&mut self, rep: Resource<UsbTransfer>) -> Result<(), Error> {
-        println!("Drop transfer");
+        trace!("Drop transfer");
         if let Ok(transfer) = self.table.get(&rep) {
             unsafe {
                 if !transfer.completed.load(Ordering::SeqCst) {
@@ -537,6 +562,24 @@ impl HostUsbDevice for MyState {
             Ok(resource)
         }
     }
+    
+    fn get_active_configuration_descriptor(
+        &mut self,
+        self_: Resource<UsbDevice>,
+    ) -> Result<ConfigurationDescriptor, LibusbError> {
+        let usb_device = self.table.get(&self_).expect("Failed to get device");
+        let device_ptr = usb_device.device;
+        unsafe {
+            let mut config_desc: *const libusb_config_descriptor = std::ptr::null();
+            let res = libusb_get_active_config_descriptor(device_ptr, &mut config_desc);
+            if res < 0 {
+                return Err(LibusbError::from_raw(res));
+            }
+            let descriptor = generate_config_descriptor(&*config_desc);
+            libusb_free_config_descriptor(config_desc);
+            Ok(descriptor)
+        }
+    }
 
     fn get_configuration_descriptor(
         &mut self,
@@ -551,17 +594,7 @@ impl HostUsbDevice for MyState {
             if res < 0 {
                 return Err(LibusbError::from_raw(res));
             }
-            let config_desc = &*config_desc;
-            let descriptor = ConfigurationDescriptor {
-                length: config_desc.bLength,
-                descriptor_type: config_desc.bDescriptorType,
-                total_length: config_desc.wTotalLength,
-                num_interfaces: config_desc.bNumInterfaces,
-                configuration_value: config_desc.bConfigurationValue,
-                configuration_index: config_desc.iConfiguration,
-                attributes: config_desc.bmAttributes,
-                max_power: config_desc.bMaxPower,
-            };
+            let descriptor = generate_config_descriptor(&*config_desc);
             libusb_free_config_descriptor(config_desc);
             Ok(descriptor)
         }
@@ -584,30 +617,69 @@ impl HostUsbDevice for MyState {
             if res < 0 {
                 return Err(LibusbError::from_raw(res));
             }
-            let config_desc = &*config_desc;
-            let descriptor = ConfigurationDescriptor {
-                length: config_desc.bLength,
-                descriptor_type: config_desc.bDescriptorType,
-                total_length: config_desc.wTotalLength,
-                num_interfaces: config_desc.bNumInterfaces,
-                configuration_value: config_desc.bConfigurationValue,
-                configuration_index: config_desc.iConfiguration,
-                attributes: config_desc.bmAttributes,
-                max_power: config_desc.bMaxPower,
-            };
+            let descriptor = generate_config_descriptor(&*config_desc);
+            // Create the ConfigurationDescriptor from the config_desc
             libusb_free_config_descriptor(config_desc);
             Ok(descriptor)
         }
     }
 
     fn drop(&mut self, rep: Resource<UsbDevice>) -> Result<(), Error> {
-        println!("Drop device");
+        trace!("Drop device");
         if let Ok(device) = self.table.get(&rep) {
             unsafe {
                 libusb_unref_device(device.device);
             }
         }
         Ok(())
+    }
+}
+
+unsafe fn generate_config_descriptor(raw_descriptor: &libusb_config_descriptor) -> ConfigurationDescriptor {
+    let mut interfaces: Vec<InterfaceDescriptor> = Vec::new();
+    for i in 0..raw_descriptor.bNumInterfaces {
+        let interface = &*raw_descriptor.interface.wrapping_add(i as usize);
+        for j in 0..interface.num_altsetting {
+            let mut endpoints: Vec<EndpointDescriptor> = Vec::new();
+            let alt_setting = &*interface.altsetting.wrapping_add(j as usize);
+            for k in 0..alt_setting.bNumEndpoints {
+                let endpoint = &*alt_setting.endpoint.wrapping_add(k as usize);
+                let endpoint_desc = EndpointDescriptor {
+                    length: endpoint.bLength,
+                    descriptor_type: endpoint.bDescriptorType,
+                    endpoint_address: endpoint.bEndpointAddress,
+                    attributes: endpoint.bmAttributes,
+                    max_packet_size: endpoint.wMaxPacketSize,
+                    interval: endpoint.bInterval,
+                    refresh: endpoint.bRefresh,
+                    synch_address: endpoint.bSynchAddress,
+                };
+                endpoints.push(endpoint_desc);
+            }
+            let interface_desc = InterfaceDescriptor {
+                length: alt_setting.bLength,
+                descriptor_type: alt_setting.bDescriptorType,
+                interface_number: alt_setting.bInterfaceNumber,
+                alternate_setting: alt_setting.bAlternateSetting,
+                interface_class: alt_setting.bInterfaceClass,
+                interface_subclass: alt_setting.bInterfaceSubClass,
+                interface_protocol: alt_setting.bInterfaceProtocol,
+                interface_index: alt_setting.iInterface,
+                endpoints,
+            };
+            interfaces.push(interface_desc);
+        }
+    }
+
+    ConfigurationDescriptor {
+        length: raw_descriptor.bLength,
+        descriptor_type: raw_descriptor.bDescriptorType,
+        total_length: raw_descriptor.wTotalLength,
+        configuration_value: raw_descriptor.bConfigurationValue,
+        configuration_index: raw_descriptor.iConfiguration,
+        attributes: raw_descriptor.bmAttributes,
+        max_power: raw_descriptor.bMaxPower,
+        interfaces
     }
 }
 
@@ -651,7 +723,7 @@ impl HostDeviceHandle for MyState {
         let usb_device_handle = self.table.get(&self_).expect("Failed to get device handle");
         unsafe {
             let res = libusb_claim_interface(usb_device_handle.handle, ifac as i32);
-            println!("Claim interface result: {:?}", res);
+            debug!("Claim interface result: {:?}", res);
             match res {
                 0.. => Ok(()),
                 _ => Err(LibusbError::from_raw(res)),
@@ -866,6 +938,7 @@ impl HostDeviceHandle for MyState {
 
             let total_len: u32 = if (*transfer_ptr).transfer_type == LIBUSB_TRANSFER_TYPE_CONTROL {
                 8 + buf_size
+                // buf_size
             } else {
                 buf_size
             };
@@ -886,7 +959,7 @@ impl HostDeviceHandle for MyState {
                 buffer_vec[5] = (setup.w_index >> 8) as u8;
                 buffer_vec[6] = (buf_size & 0xFF) as u8;
                 buffer_vec[7] = ((buf_size >> 8) & 0xFF) as u8;
-
+            
                 debug!(
                     "Control transfer setup filled: bm_request_type: {}, b_request: {}, w_value: {}, w_index: {}",
                     setup.bm_request_type,
@@ -932,6 +1005,7 @@ impl HostDeviceHandle for MyState {
                     buf_len: buf_size,
                     completed: Arc::new(AtomicBool::new(false)),
                     receiver: None,
+                    control_setup: Option::from(setup),
                 })
                 .or(Err(LibusbError::Other))?;
             info!("Transfer resource created successfully");
@@ -941,7 +1015,7 @@ impl HostDeviceHandle for MyState {
     }
 
     fn close(&mut self, self_: Resource<UsbDeviceHandle>) {
-        println!("close handle: does not do anything as drop will be automatically called");
+        debug!("close handle: does not do anything as drop will be automatically called");
         //
         // if (!self_.owned()) {
         //     return Ok(())
@@ -957,7 +1031,7 @@ impl HostDeviceHandle for MyState {
     }
 
     fn drop(&mut self, rep: Resource<UsbDeviceHandle>) -> Result<(), Error> {
-        println!("Drop device handle: {}", rep.owned());
+        debug!("Drop device handle: {}", rep.owned());
         if let Ok(handle) = self.table.get(&rep) {
             unsafe {
                 libusb_close(handle.handle);
@@ -970,6 +1044,7 @@ impl HostDeviceHandle for MyState {
 
 impl component::usb::device::Host for MyState {
     fn init(&mut self) -> Result<(), component::usb::device::LibusbError> {
+        debug!("Init host");
         if self.context.is_some() {
             return Ok(());
         }
@@ -992,7 +1067,7 @@ impl component::usb::device::Host for MyState {
                 while flag.load(Ordering::SeqCst) {
                     let rc = libusb_handle_events_timeout_completed(ctx_num as *mut libusb_context, &tv, std::ptr::null_mut());
                     if rc < 0 {
-                        eprintln!("Error in libusb_handle_events_timeout: {}", rc);
+                        error!("Error in libusb_handle_events_timeout: {}", rc);
                         break;
                     }
                 }
@@ -1004,7 +1079,7 @@ impl component::usb::device::Host for MyState {
 
     fn list_devices(
         &mut self,
-    ) -> Result<Vec<Resource<UsbDevice>>, component::usb::device::LibusbError> {
+    ) -> Result<Vec<(Resource<UsbDevice>, DeviceDescriptor, DeviceLocation)>, LibusbError> {
         info!("list_devices called.");
         unsafe {
             let mut list_ptr: *mut *mut libusb_device = std::ptr::null_mut();
@@ -1017,7 +1092,7 @@ impl component::usb::device::Host for MyState {
             if cnt < 0 {
                 return Err(LibusbError::from_raw(cnt as i32));
             }
-            let mut devices: Vec<Resource<UsbDevice>> = Vec::new();
+            let mut devices: Vec<(Resource<UsbDevice>, DeviceDescriptor, DeviceLocation)> = Vec::new();
             for i in 0..cnt {
                 let dev = *list_ptr.add(i as usize);
                 if dev.is_null() {
@@ -1043,13 +1118,37 @@ impl component::usb::device::Host for MyState {
                     product_id,
                 };
                 debug!("{:?}", usb_device);
+                let location = DeviceLocation {
+                    bus_number: libusb_get_bus_number(dev),
+                    device_address: libusb_get_device_address(dev),
+                    port_number: libusb_get_port_number(dev),
+                    speed: UsbSpeed::from_raw(libusb_get_device_speed(dev) as u8)
+                };
+                
+                let device_descriptor = DeviceDescriptor {
+                    length: device_desc.bLength,
+                    descriptor_type: device_desc.bDescriptorType,
+                    usb_version_bcd: device_desc.bcdUSB,
+                    device_class: device_desc.bDeviceClass,
+                    device_subclass: device_desc.bDeviceSubClass,
+                    device_protocol: device_desc.bDeviceProtocol,
+                    max_packet_size0: device_desc.bMaxPacketSize0,
+                    vendor_id,
+                    product_id,
+                    device_version_bcd: device_desc.bcdDevice,
+                    manufacturer_index: device_desc.iManufacturer,
+                    product_index: device_desc.iProduct,
+                    serial_number_index: device_desc.iSerialNumber,
+                    num_configurations: device_desc.bNumConfigurations,
+                };
+                
                 if !self.allowed_usbdevices.is_allowed(&usb_device) {
                     warn!("Device at index {} is not allowed, freeing device.", i);
                     libusb_unref_device(dev);
                     continue;
                 }
                 info!("Device at index {} is allowed.", i);
-                devices.push(resource);
+                devices.push((resource, device_descriptor, location));
             }
             info!("Freeing device list pointer.");
             libusb_free_device_list(list_ptr, 0);
@@ -1118,7 +1217,7 @@ async fn main() -> Result<(), Error> {
     env_logger::Builder::new()
         .filter_module("usb_wasi_host", cli.debug_level.parse().unwrap_or(LevelFilter::Info))
         .init();
-
+    
     info!("Starting WASM component");
     // Compile the `Component` that is being run for the application.
     let args: Vec<String> = std::env::args().collect();

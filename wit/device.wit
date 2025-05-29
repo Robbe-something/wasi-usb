@@ -19,8 +19,7 @@ interface device {
         // get-device-descriptor: func() -> result<device-descriptor, libusb-error>;
         get-configuration-descriptor: func(config-index: u8) -> result<configuration-descriptor, libusb-error>;
         get-configuration-descriptor-by-value: func(config-value: u8) -> result<configuration-descriptor, libusb-error>;
-        // get-interface-descriptor: func(interface-number: u8, alternate-setting: u8) -> result<interface-descriptor, libusb-error>;
-        // get-endpoint-descriptor: func(interface-number: u8, endpoint-index: u8) -> result<endpoint-descriptor, libusb-error>;
+        get-active-configuration-descriptor: func() -> result<configuration-descriptor, libusb-error>;
 
     }
 
@@ -99,5 +98,31 @@ interface device {
     /// Returns a list of usb-device objects representing each device.
     /// This corresponds to libusb_get_device_list().
     /// The returned devices are new references managed by the backend.
-    list-devices: func() -> result<list<usb-device>, libusb-error>;
+    list-devices: func() -> result<list<tuple<usb-device, device-descriptor, device-location>>, libusb-error>;
+
+    /// Enum representing USB speeds.
+    enum usb-speed {
+        // Unknown speed (e.g., device not connected)
+        unknown,
+        // Low speed (1.5 Mbps)
+        low,
+        // Full speed (12 Mbps)
+        full,
+        // High speed (480 Mbps)
+        high,
+        // Super speed (5 Gbps)
+        super,
+        // Super speed plus (10 Gbps)
+        super-plus,
+        // Super speed plus 2 (20 Gbps)
+        super-plus-X2,
+    }
+
+    /// Record representing location and other info of a USB device.
+    record device-location {
+        bus-number: u8,          // USB bus number
+        device-address: u8,      // Device address on the bus
+        port-number: u8,         // Port number (if applicable)
+        speed: usb-speed,        // USB speed
+    }
 }

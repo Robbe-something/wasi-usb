@@ -26,7 +26,7 @@ interface descriptors {
         length: u8,                 // Size of this descriptor in bytes (should be 9)
         descriptor-type: u8,       // CONFIGURATION descriptor type (2)
         total-length: u16,         // Total length of data including all sub-descriptors
-        num-interfaces: u8,        // Number of interfaces
+        interfaces: list<interface-descriptor>, // List of interfaces in this configuration
         configuration-value: u8,   // Value to use for SetConfiguration
         configuration-index: u8,   // Index of string descriptor describing this configuration
         attributes: u8,            // Bitmap: self/bus powered, remote wakeup
@@ -39,7 +39,7 @@ interface descriptors {
         descriptor-type: u8,        // INTERFACE descriptor type (4)
         interface-number: u8,       // Number of this interface
         alternate-setting: u8,      // Value to select alternate setting
-        num-endpoints: u8,          // Number of endpoints (excluding endpoint 0)
+        endpoints: list<endpoint-descriptor>, // list of endpoints
         interface-class: u8,        // Class code
         interface-subclass: u8,     // Subclass code
         interface-protocol: u8,     // Protocol code
