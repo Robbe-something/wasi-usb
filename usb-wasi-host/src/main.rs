@@ -1,4 +1,4 @@
-use libc::timeval;
+use libc::{free, timeval};
 use libusb1_sys::constants::{
     LIBUSB_CAP_HAS_HOTPLUG, LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED, LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
     LIBUSB_HOTPLUG_MATCH_ANY, LIBUSB_HOTPLUG_NO_FLAGS, LIBUSB_TRANSFER_COMPLETED,
@@ -19,7 +19,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{env, thread};
-
+use std::time::Duration;
 use log::{debug, error, info, trace, warn, LevelFilter};
 use once_cell::sync::Lazy;
 use clap::Parser;
@@ -501,9 +501,9 @@ impl HostTransfer for MyState {
         Ok(())
     }
 
-    fn drop(&mut self, rep: Resource<UsbTransfer>) -> Result<(), Error> {
+    fn drop(&mut self, self_: Resource<UsbTransfer>) -> Result<(), Error> {
         trace!("Drop transfer");
-        if let Ok(transfer) = self.table.get(&rep) {
+        if let Ok(transfer) = self.table.get(&self_) {
             unsafe {
                 if !transfer.completed.load(Ordering::SeqCst) {
                     let _ = libusb_cancel_transfer(transfer.transfer);
@@ -533,13 +533,18 @@ impl component::usb::transfers::Host for MyState {
         let receiver = usb_transfer.receiver.take().ok_or(LibusbError::NotFound)?;
         info!("Transfer receiver set");
 
-        match receiver.await {
+        let result = match receiver.await {
             Ok(result) => {
                 info!("Transfer result: {:?}", result);
                 result
             }
             Err(_) => Err(LibusbError::Interrupted),
-        }
+        };
+
+        // Remove the transfer from the resource table to free memory
+        self.table.delete(self_).ok();
+
+        result
     }
 }
 
@@ -1246,3 +1251,4 @@ async fn main() -> Result<(), Error> {
     info!("WASM component finished");
     Ok(())
 }
+
