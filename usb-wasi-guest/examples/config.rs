@@ -11,7 +11,7 @@ fn main() {
         println!("No devices.");
         return;
     }
-    let dev = &devs[0];
+    let dev = &devs[0].0;
     // by index
     let cfg0 = dev
         .get_configuration_descriptor(0)

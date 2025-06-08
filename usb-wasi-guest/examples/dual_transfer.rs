@@ -19,7 +19,7 @@ fn main() {
         return;
     }
     // open first device
-    let handle = devs.remove(0).open().expect("open failed");
+    let handle = devs.remove(0).0.open().expect("open failed");
 
     // prepare two Control-IN transfers for configuration 0 and 1
     let opts = TransferOptions {

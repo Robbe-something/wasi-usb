@@ -18,4 +18,10 @@ tokio = { version = "1.35.0", features = [ "sync", "macros" ,"io-util","rt","tim
 anyhow = "1.0.72"
 bitflags = "2.5.0"
 wit-bindgen = "0.41.0"
-
+mbrman = "0.6.0"
+exfat = "0.1.0"
+env_logger = "0.11.8"
+bytes = "1.10.1"
+log = "0.4.27"
+sha2 = "0.10.9"
+getrandom = "0.3.3"

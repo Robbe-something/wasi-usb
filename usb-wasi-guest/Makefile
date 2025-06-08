@@ -8,7 +8,7 @@ MODE    ?= debug
 
 # --- derive cargo flags + output dir -------------------------------
 ifeq ($(MODE),release)
-    CARGO_MODE_FLAG := --target=wam32-wasip2 --release
+    CARGO_MODE_FLAG := --release --target=wasm32-wasip2
     OUT_DIR        := release
     HOST_BUILD_FLAG := --release
 else                              # debug
@@ -18,7 +18,7 @@ else                              # debug
 endif
 
 WASM = target/wasm32-wasip2/$(OUT_DIR)/examples/$(EXAMPLE).wasm
-HOST = ../usb-wasi-host/target/$(MODE)/usb-wasi-host
+HOST = ../usb-wasi-host/target/release/usb-wasi-host
 
 # -------------------------------------------------------------------
 build:
@@ -26,6 +26,6 @@ build:
 	cd ../usb-wasi-host && cargo build $(HOST_BUILD_FLAG)
 
 run: build
-	time sudo $(HOST) -c $(WASM) --usb-devices 05ac:139d --usb-devices 05ac:12a8 -d 0951:1666 -d 046d:c52b -l trace
+	time sudo $(HOST) -c $(WASM) -l error
 
 .PHONY: build run

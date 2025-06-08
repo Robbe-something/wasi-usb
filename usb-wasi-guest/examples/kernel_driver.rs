@@ -7,7 +7,7 @@ fn main() {
     device::init().expect("init failed");
     let mut devs = device::list_devices().expect("list_devices failed");
     if devs.is_empty() { return; }
-    let handle = devs.remove(0).open().expect("open failed");
+    let handle = devs.remove(0).0.open().expect("open failed");
 
     // set configuration 1
     handle

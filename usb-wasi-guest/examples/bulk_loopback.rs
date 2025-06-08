@@ -19,7 +19,7 @@ fn main() {
         println!("No USB devices found.");
         return;
     }
-    let handle = devs.remove(0).open().expect("open failed");
+    let handle = devs.remove(0).0.open().expect("open failed");
 
     // assume cfg=1, iface=0, bulk OUT @0x01, bulk IN @0x81
     handle.set_configuration(ConfigValue::Value(1)).expect("set_configuration");

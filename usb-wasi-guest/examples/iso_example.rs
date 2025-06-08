@@ -19,7 +19,7 @@ fn main() {
         println!("No devices.");
         return;
     }
-    let handle = devs.remove(0).open().expect("open failed");
+    let handle = devs.remove(0).0.open().expect("open failed");
 
     // assume cfg=1, iface=2, iso IN @0x82
     handle.set_configuration(ConfigValue::Value(1)).expect("set_configuration");

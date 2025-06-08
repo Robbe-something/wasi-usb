@@ -32,7 +32,7 @@ async fn main() {
 
     let dev = &devices[0];
     println!("Opening first device …");
-    let handle = dev.open().expect("open() failed");
+    let handle = dev.0.open().expect("open() failed");
 
     // 3. Query active configuration
     match handle.get_configuration() {
