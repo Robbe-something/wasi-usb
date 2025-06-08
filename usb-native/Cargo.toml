@@ -1,0 +1,12 @@
+[package]
+name = "usb-native"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rusb = "0.9.4"
+bytes = "1.10.1"
+anyhow = "1.0.98"
+mbrman = "0.6.0"
+exfat = "0.1.0"
+env_logger = "0.11.8"
