@@ -146,46 +146,6 @@ typedef struct component_usb_descriptors_device_descriptor_t {
   uint8_t   num_configurations;
 } component_usb_descriptors_device_descriptor_t;
 
-// USB Configuration Descriptor (9 bytes)
-typedef struct component_usb_descriptors_configuration_descriptor_t {
-  uint8_t   length;
-  // Size of this descriptor in bytes (should be 9)
-  uint8_t   descriptor_type;
-  // CONFIGURATION descriptor type (2)
-  uint16_t   total_length;
-  // Total length of data including all sub-descriptors
-  uint8_t   num_interfaces;
-  // Number of interfaces
-  uint8_t   configuration_value;
-  // Value to use for SetConfiguration
-  uint8_t   configuration_index;
-  // Index of string descriptor describing this configuration
-  uint8_t   attributes;
-  // Bitmap: self/bus powered, remote wakeup
-  uint8_t   max_power;
-} component_usb_descriptors_configuration_descriptor_t;
-
-// USB Interface Descriptor (9 bytes)
-typedef struct component_usb_descriptors_interface_descriptor_t {
-  uint8_t   length;
-  // Size of this descriptor in bytes (should be 9)
-  uint8_t   descriptor_type;
-  // INTERFACE descriptor type (4)
-  uint8_t   interface_number;
-  // Number of this interface
-  uint8_t   alternate_setting;
-  // Value to select alternate setting
-  uint8_t   num_endpoints;
-  // Number of endpoints (excluding endpoint 0)
-  uint8_t   interface_class;
-  // Class code
-  uint8_t   interface_subclass;
-  // Subclass code
-  uint8_t   interface_protocol;
-  // Protocol code
-  uint8_t   interface_index;
-} component_usb_descriptors_interface_descriptor_t;
-
 // USB Endpoint Descriptor (7+ bytes)
 typedef struct component_usb_descriptors_endpoint_descriptor_t {
   uint8_t   length;
@@ -204,6 +164,56 @@ typedef struct component_usb_descriptors_endpoint_descriptor_t {
   // (Isochronous) Data rate refresh interval
   uint8_t   synch_address;
 } component_usb_descriptors_endpoint_descriptor_t;
+
+typedef struct {
+  component_usb_descriptors_endpoint_descriptor_t *ptr;
+  size_t len;
+} component_usb_descriptors_list_endpoint_descriptor_t;
+
+// USB Interface Descriptor (9 bytes)
+typedef struct component_usb_descriptors_interface_descriptor_t {
+  uint8_t   length;
+  // Size of this descriptor in bytes (should be 9)
+  uint8_t   descriptor_type;
+  // INTERFACE descriptor type (4)
+  uint8_t   interface_number;
+  // Number of this interface
+  uint8_t   alternate_setting;
+  // Value to select alternate setting
+  component_usb_descriptors_list_endpoint_descriptor_t   endpoints;
+  // list of endpoints
+  uint8_t   interface_class;
+  // Class code
+  uint8_t   interface_subclass;
+  // Subclass code
+  uint8_t   interface_protocol;
+  // Protocol code
+  uint8_t   interface_index;
+} component_usb_descriptors_interface_descriptor_t;
+
+typedef struct {
+  component_usb_descriptors_interface_descriptor_t *ptr;
+  size_t len;
+} component_usb_descriptors_list_interface_descriptor_t;
+
+// USB Configuration Descriptor (9 bytes)
+typedef struct component_usb_descriptors_configuration_descriptor_t {
+  uint8_t   length;
+  // Size of this descriptor in bytes (should be 9)
+  uint8_t   descriptor_type;
+  // CONFIGURATION descriptor type (2)
+  uint16_t   total_length;
+  // Total length of data including all sub-descriptors
+  component_usb_descriptors_list_interface_descriptor_t   interfaces;
+  // List of interfaces in this configuration
+  uint8_t   configuration_value;
+  // Value to use for SetConfiguration
+  uint8_t   configuration_index;
+  // Index of string descriptor describing this configuration
+  uint8_t   attributes;
+  // Bitmap: self/bus powered, remote wakeup
+  uint8_t   max_power;
+} component_usb_descriptors_configuration_descriptor_t;
 
 typedef component_usb_errors_libusb_error_t component_usb_device_libusb_error_t;
 
@@ -238,6 +248,35 @@ typedef struct component_usb_device_own_device_handle_t {
 typedef struct component_usb_device_borrow_device_handle_t {
   int32_t __handle;
 } component_usb_device_borrow_device_handle_t;
+
+// Enum representing USB speeds.
+typedef uint8_t component_usb_device_usb_speed_t;
+
+// Unknown speed (e.g., device not connected)
+#define COMPONENT_USB_DEVICE_USB_SPEED_UNKNOWN 0
+// Low speed (1.5 Mbps)
+#define COMPONENT_USB_DEVICE_USB_SPEED_LOW 1
+// Full speed (12 Mbps)
+#define COMPONENT_USB_DEVICE_USB_SPEED_FULL 2
+// High speed (480 Mbps)
+#define COMPONENT_USB_DEVICE_USB_SPEED_HIGH 3
+// Super speed (5 Gbps)
+#define COMPONENT_USB_DEVICE_USB_SPEED_SUPER 4
+// Super speed plus (10 Gbps)
+#define COMPONENT_USB_DEVICE_USB_SPEED_SUPER_PLUS 5
+// Super speed plus 2 (20 Gbps)
+#define COMPONENT_USB_DEVICE_USB_SPEED_SUPER_PLUS_X2 6
+
+// Record representing location and other info of a USB device.
+typedef struct component_usb_device_device_location_t {
+  uint8_t   bus_number;
+  // USB bus number
+  uint8_t   device_address;
+  // Device address on the bus
+  uint8_t   port_number;
+  // Port number (if applicable)
+  component_usb_device_usb_speed_t   speed;
+} component_usb_device_device_location_t;
 
 typedef struct {
   bool is_err;
@@ -289,17 +328,23 @@ typedef struct {
 } component_usb_device_result_own_transfer_libusb_error_t;
 
 typedef struct {
-  component_usb_device_own_usb_device_t *ptr;
+  component_usb_device_own_usb_device_t f0;
+  component_usb_device_device_descriptor_t f1;
+  component_usb_device_device_location_t f2;
+} component_usb_device_tuple3_own_usb_device_device_descriptor_device_location_t;
+
+typedef struct {
+  component_usb_device_tuple3_own_usb_device_device_descriptor_device_location_t *ptr;
   size_t len;
-} component_usb_device_list_own_usb_device_t;
+} component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_t;
 
 typedef struct {
   bool is_err;
   union {
-    component_usb_device_list_own_usb_device_t ok;
+    component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_t ok;
     component_usb_device_libusb_error_t err;
   } val;
-} component_usb_device_result_list_own_usb_device_libusb_error_t;
+} component_usb_device_result_list_tuple3_own_usb_device_device_descriptor_device_location_libusb_error_t;
 
 typedef component_usb_errors_libusb_error_t component_usb_usb_hotplug_libusb_error_t;
 
@@ -361,6 +406,7 @@ extern bool component_usb_device_method_usb_device_open(component_usb_device_bor
 // get-device-descriptor: func() -> result<device-descriptor, libusb-error>;
 extern bool component_usb_device_method_usb_device_get_configuration_descriptor(component_usb_device_borrow_usb_device_t self, uint8_t config_index, component_usb_device_configuration_descriptor_t *ret, component_usb_device_libusb_error_t *err);
 extern bool component_usb_device_method_usb_device_get_configuration_descriptor_by_value(component_usb_device_borrow_usb_device_t self, uint8_t config_value, component_usb_device_configuration_descriptor_t *ret, component_usb_device_libusb_error_t *err);
+extern bool component_usb_device_method_usb_device_get_active_configuration_descriptor(component_usb_device_borrow_usb_device_t self, component_usb_device_configuration_descriptor_t *ret, component_usb_device_libusb_error_t *err);
 // Get the currently active configuration value of an open device.
 // On success, returns the bConfigurationValue (0 if unconfigured).
 extern bool component_usb_device_method_device_handle_get_configuration(component_usb_device_borrow_device_handle_t self, uint8_t *ret, component_usb_device_libusb_error_t *err);
@@ -418,7 +464,7 @@ extern bool component_usb_device_init(component_usb_device_libusb_error_t *err);
 // Returns a list of usb-device objects representing each device.
 // This corresponds to libusb_get_device_list().
 // The returned devices are new references managed by the backend.
-extern bool component_usb_device_list_devices(component_usb_device_list_own_usb_device_t *ret, component_usb_device_libusb_error_t *err);
+extern bool component_usb_device_list_devices(component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_t *ret, component_usb_device_libusb_error_t *err);
 
 // Imported Functions from `component:usb/usb-hotplug@0.2.1`
 extern bool component_usb_usb_hotplug_enable_hotplug(component_usb_usb_hotplug_libusb_error_t *err);
@@ -441,7 +487,19 @@ void component_usb_transfers_result_list_u8_libusb_error_free(component_usb_tran
 
 void component_usb_configuration_config_value_free(component_usb_configuration_config_value_t *ptr);
 
+void component_usb_descriptors_list_endpoint_descriptor_free(component_usb_descriptors_list_endpoint_descriptor_t *ptr);
+
+void component_usb_descriptors_interface_descriptor_free(component_usb_descriptors_interface_descriptor_t *ptr);
+
+void component_usb_descriptors_list_interface_descriptor_free(component_usb_descriptors_list_interface_descriptor_t *ptr);
+
+void component_usb_descriptors_configuration_descriptor_free(component_usb_descriptors_configuration_descriptor_t *ptr);
+
 void component_usb_device_config_value_free(component_usb_device_config_value_t *ptr);
+
+void component_usb_device_configuration_descriptor_free(component_usb_device_configuration_descriptor_t *ptr);
+
+void component_usb_device_interface_descriptor_free(component_usb_device_interface_descriptor_t *ptr);
 
 extern void component_usb_device_usb_device_drop_own(component_usb_device_own_usb_device_t handle);
 
@@ -463,9 +521,9 @@ void component_usb_device_result_bool_libusb_error_free(component_usb_device_res
 
 void component_usb_device_result_own_transfer_libusb_error_free(component_usb_device_result_own_transfer_libusb_error_t *ptr);
 
-void component_usb_device_list_own_usb_device_free(component_usb_device_list_own_usb_device_t *ptr);
+void component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_free(component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_t *ptr);
 
-void component_usb_device_result_list_own_usb_device_libusb_error_free(component_usb_device_result_list_own_usb_device_libusb_error_t *ptr);
+void component_usb_device_result_list_tuple3_own_usb_device_device_descriptor_device_location_libusb_error_free(component_usb_device_result_list_tuple3_own_usb_device_device_descriptor_device_location_libusb_error_t *ptr);
 
 void component_usb_usb_hotplug_result_void_libusb_error_free(component_usb_usb_hotplug_result_void_libusb_error_t *ptr);
 

@@ -19,15 +19,6 @@ bool exports_wasi_cli_run_run(void) {
     }
     printf("Hot-plug enabled – attach or remove a USB device to test.\n");
 
-    // List initial devices
-    component_usb_device_list_own_usb_device_t device_list;
-    if (!component_usb_device_list_devices(&device_list, &err)) {
-        fprintf(stderr, "Could not list devices: %d\n", err);
-        return 1;
-    }
-    printf("Initially %zu devices present.\n", device_list.len);
-    component_usb_device_list_own_usb_device_free(&device_list);
-
     // Poll for events
     for (int i = 0; i < 60; i++) {
         sleep(1);

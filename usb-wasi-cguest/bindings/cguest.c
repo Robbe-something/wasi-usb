@@ -24,6 +24,9 @@ extern void __wasm_import_component_usb_device_method_usb_device_get_configurati
 __attribute__((__import_module__("component:usb/device@0.2.1"), __import_name__("[method]usb-device.get-configuration-descriptor-by-value")))
 extern void __wasm_import_component_usb_device_method_usb_device_get_configuration_descriptor_by_value(int32_t, int32_t, uint8_t *);
 
+__attribute__((__import_module__("component:usb/device@0.2.1"), __import_name__("[method]usb-device.get-active-configuration-descriptor")))
+extern void __wasm_import_component_usb_device_method_usb_device_get_active_configuration_descriptor(int32_t, uint8_t *);
+
 __attribute__((__import_module__("component:usb/device@0.2.1"), __import_name__("[method]device-handle.get-configuration")))
 extern void __wasm_import_component_usb_device_method_device_handle_get_configuration(int32_t, uint8_t *);
 
@@ -138,8 +141,45 @@ void component_usb_configuration_config_value_free(component_usb_configuration_c
   }
 }
 
+void component_usb_descriptors_list_endpoint_descriptor_free(component_usb_descriptors_list_endpoint_descriptor_t *ptr) {
+  size_t list_len = ptr->len;
+  if (list_len > 0) {
+    component_usb_descriptors_endpoint_descriptor_t *list_ptr = ptr->ptr;
+    for (size_t i = 0; i < list_len; i++) {
+    }
+    free(list_ptr);
+  }
+}
+
+void component_usb_descriptors_interface_descriptor_free(component_usb_descriptors_interface_descriptor_t *ptr) {
+  component_usb_descriptors_list_endpoint_descriptor_free(&ptr->endpoints);
+}
+
+void component_usb_descriptors_list_interface_descriptor_free(component_usb_descriptors_list_interface_descriptor_t *ptr) {
+  size_t list_len = ptr->len;
+  if (list_len > 0) {
+    component_usb_descriptors_interface_descriptor_t *list_ptr = ptr->ptr;
+    for (size_t i = 0; i < list_len; i++) {
+      component_usb_descriptors_interface_descriptor_free(&list_ptr[i]);
+    }
+    free(list_ptr);
+  }
+}
+
+void component_usb_descriptors_configuration_descriptor_free(component_usb_descriptors_configuration_descriptor_t *ptr) {
+  component_usb_descriptors_list_interface_descriptor_free(&ptr->interfaces);
+}
+
 void component_usb_device_config_value_free(component_usb_device_config_value_t *ptr) {
   component_usb_configuration_config_value_free(ptr);
+}
+
+void component_usb_device_configuration_descriptor_free(component_usb_device_configuration_descriptor_t *ptr) {
+  component_usb_descriptors_configuration_descriptor_free(ptr);
+}
+
+void component_usb_device_interface_descriptor_free(component_usb_device_interface_descriptor_t *ptr) {
+  component_usb_descriptors_interface_descriptor_free(ptr);
 }
 
 __attribute__((__import_module__("component:usb/device@0.2.1"), __import_name__("[resource-drop]usb-device")))
@@ -172,6 +212,7 @@ void component_usb_device_result_own_device_handle_libusb_error_free(component_u
 
 void component_usb_device_result_configuration_descriptor_libusb_error_free(component_usb_device_result_configuration_descriptor_libusb_error_t *ptr) {
   if (!ptr->is_err) {
+    component_usb_device_configuration_descriptor_free(&ptr->val.ok);
   } else {
   }
 }
@@ -200,19 +241,19 @@ void component_usb_device_result_own_transfer_libusb_error_free(component_usb_de
   }
 }
 
-void component_usb_device_list_own_usb_device_free(component_usb_device_list_own_usb_device_t *ptr) {
+void component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_free(component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_t *ptr) {
   size_t list_len = ptr->len;
   if (list_len > 0) {
-    component_usb_device_own_usb_device_t *list_ptr = ptr->ptr;
+    component_usb_device_tuple3_own_usb_device_device_descriptor_device_location_t *list_ptr = ptr->ptr;
     for (size_t i = 0; i < list_len; i++) {
     }
     free(list_ptr);
   }
 }
 
-void component_usb_device_result_list_own_usb_device_libusb_error_free(component_usb_device_result_list_own_usb_device_libusb_error_t *ptr) {
+void component_usb_device_result_list_tuple3_own_usb_device_device_descriptor_device_location_libusb_error_free(component_usb_device_result_list_tuple3_own_usb_device_device_descriptor_device_location_libusb_error_t *ptr) {
   if (!ptr->is_err) {
-    component_usb_device_list_own_usb_device_free(&ptr->val.ok);
+    component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_free(&ptr->val.ok);
   } else {
   }
 }
@@ -345,8 +386,8 @@ bool component_usb_device_method_usb_device_open(component_usb_device_borrow_usb
 }
 
 bool component_usb_device_method_usb_device_get_configuration_descriptor(component_usb_device_borrow_usb_device_t self, uint8_t config_index, component_usb_device_configuration_descriptor_t *ret, component_usb_device_libusb_error_t *err) {
-  __attribute__((__aligned__(2)))
-  uint8_t ret_area[12];
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(5*sizeof(void*))];
   uint8_t *ptr = (uint8_t *) &ret_area;
   __wasm_import_component_usb_device_method_usb_device_get_configuration_descriptor((self).__handle, (int32_t) (config_index), ptr);
   component_usb_device_result_configuration_descriptor_libusb_error_t result;
@@ -354,20 +395,20 @@ bool component_usb_device_method_usb_device_get_configuration_descriptor(compone
     case 0: {
       result.is_err = false;
       result.val.ok = (component_usb_descriptors_configuration_descriptor_t) {
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 2))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 3))),
-        (uint16_t) (uint16_t) ((int32_t) *((uint16_t*) (ptr + 4))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 6))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 7))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 8))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 9))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 10))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + sizeof(void*)))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (1+1*sizeof(void*))))),
+        (uint16_t) (uint16_t) ((int32_t) *((uint16_t*) (ptr + (2+1*sizeof(void*))))),
+        (component_usb_descriptors_list_interface_descriptor_t) (component_usb_descriptors_list_interface_descriptor_t) { (component_usb_descriptors_interface_descriptor_t*)(*((uint8_t **) (ptr + (2*sizeof(void*))))), (*((size_t*) (ptr + (3*sizeof(void*))))) },
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (1+4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (2+4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (3+4*sizeof(void*))))),
       };
       break;
     }
     case 1: {
       result.is_err = true;
-      result.val.err = (int32_t) *((uint8_t*) (ptr + 2));
+      result.val.err = (int32_t) *((uint8_t*) (ptr + sizeof(void*)));
       break;
     }
   }
@@ -381,8 +422,8 @@ bool component_usb_device_method_usb_device_get_configuration_descriptor(compone
 }
 
 bool component_usb_device_method_usb_device_get_configuration_descriptor_by_value(component_usb_device_borrow_usb_device_t self, uint8_t config_value, component_usb_device_configuration_descriptor_t *ret, component_usb_device_libusb_error_t *err) {
-  __attribute__((__aligned__(2)))
-  uint8_t ret_area[12];
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(5*sizeof(void*))];
   uint8_t *ptr = (uint8_t *) &ret_area;
   __wasm_import_component_usb_device_method_usb_device_get_configuration_descriptor_by_value((self).__handle, (int32_t) (config_value), ptr);
   component_usb_device_result_configuration_descriptor_libusb_error_t result;
@@ -390,20 +431,56 @@ bool component_usb_device_method_usb_device_get_configuration_descriptor_by_valu
     case 0: {
       result.is_err = false;
       result.val.ok = (component_usb_descriptors_configuration_descriptor_t) {
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 2))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 3))),
-        (uint16_t) (uint16_t) ((int32_t) *((uint16_t*) (ptr + 4))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 6))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 7))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 8))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 9))),
-        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + 10))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + sizeof(void*)))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (1+1*sizeof(void*))))),
+        (uint16_t) (uint16_t) ((int32_t) *((uint16_t*) (ptr + (2+1*sizeof(void*))))),
+        (component_usb_descriptors_list_interface_descriptor_t) (component_usb_descriptors_list_interface_descriptor_t) { (component_usb_descriptors_interface_descriptor_t*)(*((uint8_t **) (ptr + (2*sizeof(void*))))), (*((size_t*) (ptr + (3*sizeof(void*))))) },
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (1+4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (2+4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (3+4*sizeof(void*))))),
       };
       break;
     }
     case 1: {
       result.is_err = true;
-      result.val.err = (int32_t) *((uint8_t*) (ptr + 2));
+      result.val.err = (int32_t) *((uint8_t*) (ptr + sizeof(void*)));
+      break;
+    }
+  }
+  if (!result.is_err) {
+    *ret = result.val.ok;
+    return 1;
+  } else {
+    *err = result.val.err;
+    return 0;
+  }
+}
+
+bool component_usb_device_method_usb_device_get_active_configuration_descriptor(component_usb_device_borrow_usb_device_t self, component_usb_device_configuration_descriptor_t *ret, component_usb_device_libusb_error_t *err) {
+  __attribute__((__aligned__(sizeof(void*))))
+  uint8_t ret_area[(5*sizeof(void*))];
+  uint8_t *ptr = (uint8_t *) &ret_area;
+  __wasm_import_component_usb_device_method_usb_device_get_active_configuration_descriptor((self).__handle, ptr);
+  component_usb_device_result_configuration_descriptor_libusb_error_t result;
+  switch ((int32_t) *((uint8_t*) (ptr + 0))) {
+    case 0: {
+      result.is_err = false;
+      result.val.ok = (component_usb_descriptors_configuration_descriptor_t) {
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + sizeof(void*)))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (1+1*sizeof(void*))))),
+        (uint16_t) (uint16_t) ((int32_t) *((uint16_t*) (ptr + (2+1*sizeof(void*))))),
+        (component_usb_descriptors_list_interface_descriptor_t) (component_usb_descriptors_list_interface_descriptor_t) { (component_usb_descriptors_interface_descriptor_t*)(*((uint8_t **) (ptr + (2*sizeof(void*))))), (*((size_t*) (ptr + (3*sizeof(void*))))) },
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (1+4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (2+4*sizeof(void*))))),
+        (uint8_t) (uint8_t) ((int32_t) *((uint8_t*) (ptr + (3+4*sizeof(void*))))),
+      };
+      break;
+    }
+    case 1: {
+      result.is_err = true;
+      result.val.err = (int32_t) *((uint8_t*) (ptr + sizeof(void*)));
       break;
     }
   }
@@ -791,16 +868,16 @@ bool component_usb_device_init(component_usb_device_libusb_error_t *err) {
   }
 }
 
-bool component_usb_device_list_devices(component_usb_device_list_own_usb_device_t *ret, component_usb_device_libusb_error_t *err) {
+bool component_usb_device_list_devices(component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_t *ret, component_usb_device_libusb_error_t *err) {
   __attribute__((__aligned__(sizeof(void*))))
   uint8_t ret_area[(3*sizeof(void*))];
   uint8_t *ptr = (uint8_t *) &ret_area;
   __wasm_import_component_usb_device_list_devices(ptr);
-  component_usb_device_result_list_own_usb_device_libusb_error_t result;
+  component_usb_device_result_list_tuple3_own_usb_device_device_descriptor_device_location_libusb_error_t result;
   switch ((int32_t) *((uint8_t*) (ptr + 0))) {
     case 0: {
       result.is_err = false;
-      result.val.ok = (component_usb_device_list_own_usb_device_t) { (component_usb_device_own_usb_device_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
+      result.val.ok = (component_usb_device_list_tuple3_own_usb_device_device_descriptor_device_location_t) { (component_usb_device_tuple3_own_usb_device_device_descriptor_device_location_t*)(*((uint8_t **) (ptr + sizeof(void*)))), (*((size_t*) (ptr + (2*sizeof(void*))))) };
       break;
     }
     case 1: {
